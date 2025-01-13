@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using FlaxEditor.Utilities;
 
@@ -25,7 +25,6 @@ namespace FlaxEditor.Progress.Handlers
             ScriptsBuilder.ScriptsReloadCalled += () => OnUpdate(0.8f, "Reloading scripts...");
             ScriptsBuilder.ScriptsReloadBegin += OnScriptsReloadBegin;
             ScriptsBuilder.ScriptsReloadEnd += OnScriptsReloadEnd;
-            ScriptsBuilder.ScriptsReload += OnScriptsReload;
         }
 
         private void OnScriptsReloadBegin()
@@ -36,14 +35,6 @@ namespace FlaxEditor.Progress.Handlers
 
             // Clear references to the user scripts (we gonna reload an assembly)
             Editor.Instance.Scene.ClearRefsToSceneObjects(true);
-        }
-
-        private void OnScriptsReload()
-        {
-#if !USE_NETCORE
-            // Clear types cache
-            Newtonsoft.Json.JsonSerializer.ClearCache();
-#endif
         }
 
         private void OnCompilationFailed()

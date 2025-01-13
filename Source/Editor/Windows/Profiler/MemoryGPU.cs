@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -39,11 +39,30 @@ namespace FlaxEditor.Windows.Profiler
         : base("GPU Memory")
         {
             // Layout
-            var panel = new Panel(ScrollBars.Vertical)
+            var mainPanel = new Panel(ScrollBars.None)
             {
                 AnchorPreset = AnchorPresets.StretchAll,
                 Offsets = Margin.Zero,
                 Parent = this,
+            };
+            
+            // Chart
+            _memoryUsageChart = new SingleChart
+            {
+                Title = "GPU Memory Usage",
+                AnchorPreset = AnchorPresets.HorizontalStretchTop,
+                Offsets = Margin.Zero,
+                Height = SingleChart.DefaultHeight,
+                FormatSample = v => Utilities.Utils.FormatBytesCount((ulong)v),
+                Parent = mainPanel,
+            };
+            _memoryUsageChart.SelectedSampleChanged += OnSelectedSampleChanged;
+
+            var panel = new Panel(ScrollBars.Vertical)
+            {
+                AnchorPreset = AnchorPresets.StretchAll,
+                Offsets = new Margin(0, 0, _memoryUsageChart.Height + 2, 0),
+                Parent = mainPanel,
             };
             var layout = new VerticalPanel
             {
@@ -53,17 +72,10 @@ namespace FlaxEditor.Windows.Profiler
                 Parent = panel,
             };
 
-            // Chart
-            _memoryUsageChart = new SingleChart
-            {
-                Title = "GPU Memory Usage",
-                FormatSample = v => Utilities.Utils.FormatBytesCount((int)v),
-                Parent = layout,
-            };
-            _memoryUsageChart.SelectedSampleChanged += OnSelectedSampleChanged;
-
             // Table
-            var headerColor = Style.Current.LightBackground;
+            var style = Style.Current;
+            var headerColor = style.LightBackground;
+            var textColor = style.Foreground;
             _table = new Table
             {
                 Columns = new[]
@@ -74,18 +86,21 @@ namespace FlaxEditor.Windows.Profiler
                         CellAlignment = TextAlignment.Near,
                         Title = "Resource",
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                     },
                     new ColumnDefinition
                     {
                         Title = "Type",
                         CellAlignment = TextAlignment.Center,
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                     },
                     new ColumnDefinition
                     {
                         Title = "Memory Usage",
                         TitleBackgroundColor = headerColor,
                         FormatValue = v => Utilities.Utils.FormatBytesCount((ulong)v),
+                        TitleColor = textColor,
                     },
                 },
                 Parent = layout,
@@ -140,6 +155,8 @@ namespace FlaxEditor.Windows.Profiler
 #endif
                         Type = gpuResource.ResourceType,
                     };
+                    if (resource.Name == null)
+                        resource.Name = string.Empty;
 
                     // Create tooltip
                     sb.Clear();

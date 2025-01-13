@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System.Threading;
 using FlaxEngine;
@@ -22,7 +22,7 @@ namespace FlaxEditor.GUI.Dialogs
         /// <summary>
         /// The parent window.
         /// </summary>
-        protected Window _window;
+        protected volatile Window _window;
 
         /// <summary>
         /// The dialog result.
@@ -38,6 +38,11 @@ namespace FlaxEditor.GUI.Dialogs
         /// Gets the dialog result.
         /// </summary>
         public DialogResult Result => _result;
+
+        /// <summary>
+        /// Returns the size of the dialog.
+        /// </summary>
+        public Float2 DialogSize => _dialogSize;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Dialog"/> class.

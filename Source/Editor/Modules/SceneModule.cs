@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -6,6 +6,7 @@ using System.IO;
 using FlaxEditor.SceneGraph;
 using FlaxEditor.SceneGraph.Actors;
 using FlaxEngine;
+using FlaxEngine.GUI;
 using Object = FlaxEngine.Object;
 
 namespace FlaxEditor.Modules
@@ -181,6 +182,9 @@ namespace FlaxEditor.Modules
             var cam = scene.AddChild<Camera>();
             cam.Name = "Camera";
             cam.Position = new Vector3(0, 150, -300);
+            //
+            var audioListener = cam.AddChild<AudioListener>();
+            audioListener.Name = "Audio Listener";
 
             // Serialize
             var bytes = Level.SaveSceneToBytes(scene);
@@ -242,7 +246,6 @@ namespace FlaxEditor.Modules
         /// <param name="additive">True if don't close opened scenes and just add new scene to them, otherwise will release current scenes and load single one.</param>
         public void OpenScene(Guid sceneId, bool additive = false)
         {
-            // Check if cannot change scene now
             if (!Editor.StateMachine.CurrentState.CanChangeScene)
                 return;
 
@@ -267,12 +270,34 @@ namespace FlaxEditor.Modules
         }
 
         /// <summary>
+        /// Reload all loaded scenes.
+        /// </summary>
+        public void ReloadScenes()
+        {
+            if (!Editor.StateMachine.CurrentState.CanChangeScene)
+                return;
+
+            if (!Editor.IsPlayMode)
+            {
+                if (CheckSaveBeforeClose())
+                    return;
+            }
+
+            // Reload scenes
+            foreach (var scene in Level.Scenes)
+            {
+                var sceneId = scene.ID;
+                Level.UnloadScene(scene);
+                Level.LoadScene(sceneId);
+            }
+        }
+
+        /// <summary>
         /// Closes scene (async).
         /// </summary>
         /// <param name="scene">The scene.</param>
         public void CloseScene(Scene scene)
         {
-            // Check if cannot change scene now
             if (!Editor.StateMachine.CurrentState.CanChangeScene)
                 return;
 
@@ -296,7 +321,6 @@ namespace FlaxEditor.Modules
         /// </summary>
         public void CloseAllScenes()
         {
-            // Check if cannot change scene now
             if (!Editor.StateMachine.CurrentState.CanChangeScene)
                 return;
 
@@ -321,7 +345,6 @@ namespace FlaxEditor.Modules
         /// <param name="scene">The scene to not close.</param>
         public void CloseAllScenesExcept(Scene scene)
         {
-            // Check if cannot change scene now
             if (!Editor.StateMachine.CurrentState.CanChangeScene)
                 return;
 
@@ -433,6 +456,41 @@ namespace FlaxEditor.Modules
                 Undo.Clear();
             }
             Profiler.EndEvent();
+        }
+
+        private Dictionary<ContainerControl, Float2> _uiRootSizes;
+
+        internal void OnSaveStart(ContainerControl uiRoot)
+        {
+            // Force viewport UI to have fixed size during scene/prefabs saving to result in stable data (less mess in version control diffs)
+            if (_uiRootSizes == null)
+                _uiRootSizes = new Dictionary<ContainerControl, Float2>();
+            _uiRootSizes[uiRoot] = uiRoot.Size;
+            uiRoot.Size = new Float2(1920, 1080);
+        }
+
+        internal void OnSaveEnd(ContainerControl uiRoot)
+        {
+            // Restore cached size of the UI root container
+            if (_uiRootSizes != null && _uiRootSizes.Remove(uiRoot, out var size))
+            {
+                uiRoot.Size = size;
+            }
+        }
+
+        private void OnSceneSaving(Scene scene, Guid sceneId)
+        {
+            OnSaveStart(RootControl.GameRoot);
+        }
+        
+        private void OnSceneSaved(Scene scene, Guid sceneId)
+        {
+            OnSaveEnd(RootControl.GameRoot);
+        }
+        
+        private void OnSceneSaveError(Scene scene, Guid sceneId)
+        {
+            OnSaveEnd(RootControl.GameRoot);
         }
 
         private void OnSceneLoaded(Scene scene, Guid sceneId)
@@ -640,6 +698,9 @@ namespace FlaxEditor.Modules
             Root = new ScenesRootNode();
 
             // Bind events
+            Level.SceneSaving += OnSceneSaving;
+            Level.SceneSaved += OnSceneSaved;
+            Level.SceneSaveError += OnSceneSaveError;
             Level.SceneLoaded += OnSceneLoaded;
             Level.SceneUnloading += OnSceneUnloading;
             Level.ActorSpawned += OnActorSpawned;
@@ -654,6 +715,9 @@ namespace FlaxEditor.Modules
         public override void OnExit()
         {
             // Unbind events
+            Level.SceneSaving -= OnSceneSaving;
+            Level.SceneSaved -= OnSceneSaved;
+            Level.SceneSaveError -= OnSceneSaveError;
             Level.SceneLoaded -= OnSceneLoaded;
             Level.SceneUnloading -= OnSceneUnloading;
             Level.ActorSpawned -= OnActorSpawned;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "VisualScript.h"
 #include "Engine/Core/Log.h"
@@ -886,10 +886,16 @@ void VisualScriptExecutor::ProcessGroupFunction(Box* boxBase, Node* node, Value&
             instance = eatBox(node, box->FirstConnection());
         else
             instance.SetObject(object);
-        if (!instance.AsObject)
+        ScriptingObject* instanceObj = (ScriptingObject*)instance;
+        if (!instanceObj)
         {
             LOG(Error, "Cannot bind event to null object.");
             PrintStack(LogType::Error);
+            break;
+        }
+        if (boxBase->ID == 1)
+        {
+            value = instance;
             break;
         }
         // TODO: check if instance is of event type (including inheritance)
@@ -923,13 +929,13 @@ void VisualScriptExecutor::ProcessGroupFunction(Box* boxBase, Node* node, Value&
                     }
                     eventBinding->BindedMethods.Add(method);
                     if (eventBinding->BindedMethods.Count() == 1)
-                        (*eventBinder)(instance.AsObject, object, true);
+                        (*eventBinder)(instanceObj, object, true);
                 }
                 else if (eventBinding)
                 {
                     // Unbind from the event
                     if (eventBinding->BindedMethods.Count() == 1)
-                        (*eventBinder)(instance.AsObject, object, false);
+                        (*eventBinder)(instanceObj, object, false);
                     eventBinding->BindedMethods.Remove(method);
                 }
             }
@@ -1428,6 +1434,9 @@ Asset::LoadResult VisualScript::load()
 #if USE_EDITOR
     if (_instances.HasItems())
     {
+        // Mark as already loaded so any WaitForLoaded checks during GetDefaultInstance bellow will handle this Visual Script as ready to use
+        Platform::AtomicStore(&_loadState, (int64)LoadState::Loaded);
+
         // Setup scripting type
         CacheScriptingType();
 
@@ -1462,7 +1471,8 @@ Asset::LoadResult VisualScript::load()
                 for (int32 i = 0; i < count; i++)
                 {
                     const int32 oldIndex = _oldParamsLayout.Find(Graph.Parameters[i].Identifier);
-                    instanceParams[i] = oldIndex != -1 ? valuesCache[oldIndex] : Graph.Parameters[i].Value;
+                    const bool useOldValue = oldIndex != -1 && valuesCache[oldIndex] != _oldParamsValues[i];
+                    instanceParams[i] = useOldValue ? valuesCache[oldIndex] : Graph.Parameters[i].Value;
                 }
             }
         }
@@ -1477,6 +1487,8 @@ Asset::LoadResult VisualScript::load()
                     instanceParams[i] = Graph.Parameters[i].Value;
             }
         }
+        _oldParamsLayout.Clear();
+        _oldParamsValues.Clear();
     }
 #endif
 
@@ -1490,15 +1502,18 @@ void VisualScript::unload(bool isReloading)
     {
         // Cache existing instanced parameters IDs to restore values after asset reload (params order might be changed but the IDs are stable)
         _oldParamsLayout.Resize(Graph.Parameters.Count());
+        _oldParamsValues.Resize(Graph.Parameters.Count());
         for (int32 i = 0; i < Graph.Parameters.Count(); i++)
         {
             auto& param = Graph.Parameters[i];
             _oldParamsLayout[i] = param.Identifier;
+            _oldParamsValues[i] = param.Value;
         }
     }
     else
     {
         _oldParamsLayout.Clear();
+        _oldParamsValues.Clear();
     }
 #else
     _instances.Clear();
@@ -1512,18 +1527,22 @@ void VisualScript::unload(bool isReloading)
     // Note: preserve the registered scripting type but invalidate the locally cached handle
     if (_scriptingTypeHandle)
     {
-        VisualScriptingModule.Locker.Lock();
-        auto& type = VisualScriptingModule.Types[_scriptingTypeHandle.TypeIndex];
+        VisualScriptingBinaryModule::Locker.Lock();
+        ScriptingType& type = VisualScriptingModule.Types[_scriptingTypeHandle.TypeIndex];
         if (type.Script.DefaultInstance)
         {
             Delete(type.Script.DefaultInstance);
             type.Script.DefaultInstance = nullptr;
         }
+        char* typeName = (char*)Allocator::Allocate(sizeof(_typenameChars));
+        Platform::MemoryCopy(typeName, _typenameChars, sizeof(_typenameChars));
+        ((StringAnsiView&)type.Fullname) = StringAnsiView(typeName, 32);
+        VisualScriptingModule._unloadedScriptTypeNames.Add(typeName);
         VisualScriptingModule.TypeNameToTypeIndex.RemoveValue(_scriptingTypeHandle.TypeIndex);
         VisualScriptingModule.Scripts[_scriptingTypeHandle.TypeIndex] = nullptr;
         _scriptingTypeHandleCached = _scriptingTypeHandle;
         _scriptingTypeHandle = ScriptingTypeHandle();
-        VisualScriptingModule.Locker.Unlock();
+        VisualScriptingBinaryModule::Locker.Unlock();
     }
 }
 
@@ -1534,8 +1553,8 @@ AssetChunksFlag VisualScript::getChunksToPreload() const
 
 void VisualScript::CacheScriptingType()
 {
+    ScopeLock lock(VisualScriptingBinaryModule::Locker);
     auto& binaryModule = VisualScriptingModule;
-    ScopeLock lock(binaryModule.Locker);
 
     // Find base type
     const StringAnsi baseTypename(Meta.BaseTypename);
@@ -1644,6 +1663,8 @@ VisualScriptingBinaryModule::VisualScriptingBinaryModule()
 ScriptingObject* VisualScriptingBinaryModule::VisualScriptObjectSpawn(const ScriptingObjectSpawnParams& params)
 {
     // Create native object (base type can be C++ or C#)
+    if (params.Type.Module == nullptr)
+        return nullptr;
     ScriptingType& visualScriptType = (ScriptingType&)params.Type.GetType();
     ScriptingTypeHandle baseTypeHandle = visualScriptType.GetBaseType();
     const ScriptingType* baseTypePtr = &baseTypeHandle.GetType();
@@ -1654,9 +1675,7 @@ ScriptingObject* VisualScriptingBinaryModule::VisualScriptObjectSpawn(const Scri
     }
     ScriptingObject* object = baseTypePtr->Script.Spawn(params);
     if (!object)
-    {
         return nullptr;
-    }
 
     // Beware! Hacking vtables incoming! Undefined behaviors exploits! Low-level programming!
     visualScriptType.HackObjectVTable(object, baseTypeHandle, 1);
@@ -2051,6 +2070,11 @@ void VisualScriptingBinaryModule::Destroy(bool isReloading)
         return;
 
     BinaryModule::Destroy(isReloading);
+
+    // Free cached script typenames table
+    for (char* str : _unloadedScriptTypeNames)
+        Allocator::Free(str);
+    _unloadedScriptTypeNames.Clear();
 }
 
 ScriptingTypeHandle VisualScript::GetScriptingType()
@@ -2237,6 +2261,14 @@ void VisualScript::GetMethodSignature(int32 index, String& name, byte& flags, St
         paramTypeNames[i] = param.Type.GetTypeName();
         paramOuts[i] = param.IsOut;
     }
+}
+
+Variant VisualScript::InvokeMethod(int32 index, const Variant& instance, Span<Variant> parameters) const
+{
+    auto& method = _methods[index];
+    Variant result;
+    VisualScriptingModule.InvokeMethod((void*)&method, instance, parameters, result);
+    return result;
 }
 
 Span<byte> VisualScript::GetMetaData(int32 typeID)

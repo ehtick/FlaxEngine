@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.IO;
@@ -79,7 +79,14 @@ namespace FlaxEditor.Windows
 
                 if (item.HasDefaultThumbnail == false)
                 {
-                    cm.AddButton("Refresh thumbnail", item.RefreshThumbnail);
+                    if (_view.SelectedCount > 1)
+                        cm.AddButton("Refresh thumbnails", () =>
+                        {
+                            foreach (var e in _view.Selection)
+                                e.RefreshThumbnail();
+                        });
+                    else
+                        cm.AddButton("Refresh thumbnail", item.RefreshThumbnail);
                 }
 
                 if (!isFolder)
@@ -114,18 +121,30 @@ namespace FlaxEditor.Windows
                     }
                 }
 
-                cm.AddButton("Delete", () => Delete(item));
-
-                cm.AddSeparator();
-
-                cm.AddButton("Duplicate", _view.Duplicate);
-
-                cm.AddButton("Copy", _view.Copy);
+                if (isFolder && folder.Node is MainContentTreeNode)
+                {
+                    cm.AddSeparator();
+                }
+                else
+                {
+                    cm.AddButton("Delete", () => Delete(item));
+                    cm.AddSeparator();
+                    cm.AddButton("Duplicate", _view.Duplicate);
+                    cm.AddButton("Cut", _view.Cut);
+                    cm.AddButton("Copy", _view.Copy);
+                }
 
                 b = cm.AddButton("Paste", _view.Paste);
                 b.Enabled = _view.CanPaste();
 
-                cm.AddButton("Rename", () => Rename(item));
+                if (isFolder && folder.Node is MainContentTreeNode)
+                {
+                    // Do nothing
+                }
+                else
+                {
+                    cm.AddButton("Rename", () => Rename(item));
+                }
 
                 // Custom options
                 ContextMenuShow?.Invoke(cm, item);
@@ -187,12 +206,12 @@ namespace FlaxEditor.Windows
                     continue;
 
                 // Get context proxy
-                ContentProxy p;
+                ContentProxy p = null;
                 if (type.Type.IsSubclassOf(typeof(ContentProxy)))
                 {
                     p = Editor.ContentDatabase.Proxy.Find(x => x.GetType() == type.Type);
                 }
-                else
+                else if (type.CanCreateInstance)
                 {
                     // User can use attribute to put their own assets into the content context menu
                     var generic = typeof(SpawnableJsonAssetProxy<>).MakeGenericType(type.Type);
@@ -290,6 +309,23 @@ namespace FlaxEditor.Windows
             {
                 if (selection[i] is BinaryAssetItem binaryAssetItem)
                     Editor.ContentImporting.Reimport(binaryAssetItem);
+                else if (selection[i] is PrefabItem prefabItem)
+                {
+                    var prefab = FlaxEngine.Content.Load<Prefab>(prefabItem.ID);
+                    var modelPrefab = prefab.GetDefaultInstance().GetScript<ModelPrefab>();
+                    if (!modelPrefab)
+                        continue;
+                    var importPath = modelPrefab.ImportPath;
+                    var editor = Editor.Instance;
+                    if (editor.ContentImporting.GetReimportPath("Model Prefab", ref importPath))
+                        continue;
+                    var folder = editor.ContentDatabase.Find(Path.GetDirectoryName(prefab.Path)) as ContentFolder;
+                    if (folder == null)
+                        continue;
+                    var importOptions = modelPrefab.ImportOptions;
+                    importOptions.Type = FlaxEngine.Tools.ModelTool.ModelType.Prefab;
+                    editor.ContentImporting.Import(importPath, folder, true, importOptions);
+                }
             }
         }
 

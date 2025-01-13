@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -14,7 +14,6 @@ class Asset;
 class FLAXENGINE_API ShadersCompilation
 {
 public:
-
     /// <summary>
     /// Compiles the shader.
     /// </summary>
@@ -42,6 +41,11 @@ public:
     /// <param name="shaderCacheLength">The shader cache data length (in bytes).</param>
     /// <param name="includes">The output included.</param>
     static void ExtractShaderIncludes(byte* shaderCache, int32 shaderCacheLength, Array<String>& includes);
+
+    // Resolves shader path name into absolute file path. Resolves './<ProjectName>/ShaderFile.hlsl' cases into a full path.
+    static String ResolveShaderPath(StringView path);
+    // Compacts the full shader file path into portable format with project name prefix such as './<ProjectName>/ShaderFile.hlsl'.
+    static String CompactShaderPath(StringView path);
 
 private:
 

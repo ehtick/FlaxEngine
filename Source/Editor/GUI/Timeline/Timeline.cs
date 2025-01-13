@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -186,6 +186,11 @@ namespace FlaxEditor.GUI.Timeline
         private TimeShowModes _timeShowMode = TimeShowModes.Frames;
         private bool _showPreviewValues = true;
         private PlaybackStates _state = PlaybackStates.Disabled;
+
+        /// <summary>
+        /// The Track that is being dragged over. This could have a value when not dragging.
+        /// </summary>
+        internal Track DraggedOverTrack = null;
 
         /// <summary>
         /// Flag used to mark modified timeline data.
@@ -627,10 +632,11 @@ namespace FlaxEditor.GUI.Timeline
                 Parent = this
             };
 
+            var style = Style.Current;
             var headerTopArea = new ContainerControl
             {
                 AutoFocus = false,
-                BackgroundColor = Style.Current.LightBackground,
+                BackgroundColor = style.LightBackground,
                 AnchorPreset = AnchorPresets.HorizontalStretchTop,
                 Offsets = new Margin(0, 0, 0, HeaderTopAreaHeight),
                 Parent = _splitter.Panel1
@@ -683,7 +689,7 @@ namespace FlaxEditor.GUI.Timeline
                 {
                     AutoFocus = false,
                     ClipChildren = false,
-                    BackgroundColor = Style.Current.LightBackground,
+                    BackgroundColor = style.LightBackground,
                     AnchorPreset = AnchorPresets.HorizontalStretchBottom,
                     Offsets = new Margin(0, 0, -playbackButtonsSize, playbackButtonsSize),
                     Parent = _splitter.Panel1
@@ -845,7 +851,7 @@ namespace FlaxEditor.GUI.Timeline
             _timeIntervalsHeader = new TimeIntervalsHeader(this)
             {
                 AutoFocus = false,
-                BackgroundColor = Style.Current.Background.RGBMultiplied(0.9f),
+                BackgroundColor = style.Background.RGBMultiplied(0.9f),
                 AnchorPreset = AnchorPresets.HorizontalStretchTop,
                 Offsets = new Margin(0, 0, 0, HeaderTopAreaHeight),
                 Parent = _splitter.Panel2
@@ -854,7 +860,7 @@ namespace FlaxEditor.GUI.Timeline
             {
                 AutoFocus = false,
                 ClipChildren = false,
-                BackgroundColor = Style.Current.Background.RGBMultiplied(0.7f),
+                BackgroundColor = style.Background.RGBMultiplied(0.7f),
                 AnchorPreset = AnchorPresets.StretchAll,
                 Offsets = new Margin(0, 0, HeaderTopAreaHeight, 0),
                 Parent = _splitter.Panel2
@@ -1135,17 +1141,19 @@ namespace FlaxEditor.GUI.Timeline
                 {
                     foreach (var e in _playbackNavigation)
                     {
-                        e.Enabled = false;
-                        e.Visible = false;
+                        e.Enabled = true;
+                        e.Visible = true;
                     }
                 }
                 if (_playbackStop != null)
                 {
-                    _playbackStop.Visible = false;
+                    _playbackStop.Visible = true;
+                    _playbackStop.Enabled = false;
                 }
                 if (_playbackPlay != null)
                 {
-                    _playbackPlay.Visible = false;
+                    _playbackPlay.Visible = true;
+                    _playbackPlay.Enabled = false;
                 }
                 if (_positionHandle != null)
                 {
@@ -1280,10 +1288,7 @@ namespace FlaxEditor.GUI.Timeline
         public virtual void AddTrack(Track track, bool withUndo = true)
         {
             // Ensure name is unique
-            int idx = 1;
-            var name = track.Name;
-            while (!IsTrackNameValid(track.Name))
-                track.Name = string.Format("{0} {1}", name, idx++);
+            track.Name = GetValidTrackName(track.Name);
 
             // Add it to the timeline
             _tracks.Add(track);
@@ -1441,6 +1446,17 @@ namespace FlaxEditor.GUI.Timeline
             {
                 GetTracks(SelectedTracks[i], tracks);
             }
+            
+            // Find the lowest track position for selection
+            int lowestTrackLocation = Tracks.Count - 1;
+            for (int i = 0; i < tracks.Count; i++)
+            {
+                var trackToDelete = tracks[i];
+                if (trackToDelete.TrackIndex < lowestTrackLocation)
+                {
+                    lowestTrackLocation = trackToDelete.TrackIndex;
+                }
+            }
             SelectedTracks.Clear();
             if (withUndo && Undo != null && Undo.Enabled)
             {
@@ -1463,6 +1479,18 @@ namespace FlaxEditor.GUI.Timeline
             }
             OnTracksChanged();
             MarkAsEdited();
+
+            // Select track above deleted tracks unless track is first track
+            if (Tracks.Count > 0)
+            {
+                if (lowestTrackLocation - 1 >= 0)
+                    Select(Tracks[lowestTrackLocation - 1]);
+                else
+                    Select(Tracks[0]);
+                
+                SelectedTracks[0].Focus();
+            }
+
         }
 
         /// <summary>
@@ -1650,6 +1678,14 @@ namespace FlaxEditor.GUI.Timeline
             }
             OnTracksChanged();
             MarkAsEdited();
+            
+            // Deselect and select new clones.
+            Deselect();
+            foreach (var clone in clones)
+            {
+                Select(clone, true);
+            }
+
             SelectedTracks[0].Focus();
         }
 
@@ -1835,11 +1871,7 @@ namespace FlaxEditor.GUI.Timeline
         /// <returns>The track name.</returns>
         public string GetValidTrackName(string name)
         {
-            string newName = name;
-            int count = 0;
-            while (!IsTrackNameValid(newName))
-                newName = string.Format("{0} {1}", name, count++);
-            return newName;
+            return Utilities.Utils.IncrementNameNumber(name, IsTrackNameValid);
         }
 
         /// <summary>

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -122,6 +122,19 @@ public:
 /// </summary>
 class GPUShaderProgramVS : public GPUShaderProgram
 {
+public:
+    // Input element run-time data (see VertexShaderMeta::InputElement for compile-time data)
+    PACK_STRUCT(struct InputElement
+    {
+        byte Type; // VertexShaderMeta::InputType
+        byte Index;
+        byte Format; // PixelFormat
+        byte InputSlot;
+        uint32 AlignedByteOffset; // Fixed value or INPUT_LAYOUT_ELEMENT_ALIGN if auto
+        byte InputSlotClass; // INPUT_LAYOUT_ELEMENT_PER_VERTEX_DATA or INPUT_LAYOUT_ELEMENT_PER_INSTANCE_DATA
+        uint32 InstanceDataStepRate; // 0 if per-vertex
+    });
+
 public:
     /// <summary>
     /// Gets input layout description handle (platform dependent).

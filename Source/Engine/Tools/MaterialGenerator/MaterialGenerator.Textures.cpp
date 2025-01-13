@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #if COMPILE_WITH_MATERIAL_GRAPH
 
@@ -441,6 +441,23 @@ void MaterialGenerator::ProcessGroupTextures(Box* box, Node* node, Value& value)
             break;
         }
         }
+
+        // Channel masking
+        switch (box->ID)
+        {
+        case 2:
+            value = value.GetX();
+            break;
+        case 3:
+            value = value.GetY();
+            break;
+        case 4:
+            value = value.GetZ();
+            break;
+        case 5:
+            value = value.GetW();
+            break;
+        }
         break;
     }
     // Scene Color
@@ -567,7 +584,6 @@ void MaterialGenerator::ProcessGroupTextures(Box* box, Node* node, Value& value)
         {
             // Procedural Texture Sample
             textureBox->Cache = writeLocal(Value::InitForZero(ValueType::Float4), node);
-            createGradients(node);
             auto proceduralSample = String::Format(TEXT(
                 "   {{\n"
                 "   float3 weights;\n"
@@ -596,19 +612,19 @@ void MaterialGenerator::ProcessGroupTextures(Box* box, Node* node, Value& value)
                 "   uv1 = {0} + frac(sin(mul(float2x2(127.1, 311.7, 269.5, 183.3), vertex1)) * 43758.5453);\n"
                 "   uv2 = {0} + frac(sin(mul(float2x2(127.1, 311.7, 269.5, 183.3), vertex2)) * 43758.5453);\n"
                 "   uv3 = {0} + frac(sin(mul(float2x2(127.1, 311.7, 269.5, 183.3), vertex3)) * 43758.5453);\n"
-                "   float4 tex1 = {1}.SampleGrad({4}, uv1, {2}, {3}, {6}) * weights.x;\n"
-                "   float4 tex2 = {1}.SampleGrad({4}, uv2, {2}, {3}, {6}) * weights.y;\n"
-                "   float4 tex3 = {1}.SampleGrad({4}, uv3, {2}, {3}, {6}) * weights.z;\n"
-                "   {5} = tex1 + tex2 + tex3;\n"
+                "   float2 fdx = ddx({0});\n"
+                "   float2 fdy = ddy({0});\n"
+                "   float4 tex1 = {1}.SampleGrad({2}, uv1, fdx, fdy, {4}) * weights.x;\n"
+                "   float4 tex2 = {1}.SampleGrad({2}, uv2, fdx, fdy, {4}) * weights.y;\n"
+                "   float4 tex3 = {1}.SampleGrad({2}, uv3, fdx, fdy, {4}) * weights.z;\n"
+                "   {3} = tex1 + tex2 + tex3;\n"
                 "   }}\n"
             ),
                                                    uvs.Value, // {0}
                                                    texture.Value, // {1}
-                                                   _ddx.Value, // {2}
-                                                   _ddy.Value, // {3}
-                                                   samplerName, // {4}
-                                                   textureBox->Cache.Value, // {5}
-                                                   offset.Value // {6}
+                                                   samplerName, // {2}
+                                                   textureBox->Cache.Value, // {3}
+                                                   offset.Value // {4}
             );
 
             _writer.Write(*proceduralSample);
@@ -628,20 +644,12 @@ void MaterialGenerator::ProcessGroupTextures(Box* box, Node* node, Value& value)
     // Flipbook
     case 10:
     {
-        // Get input values
         auto uv = Value::Cast(tryGetValue(node->GetBox(0), getUVs), VariantType::Float2);
         auto frame = Value::Cast(tryGetValue(node->GetBox(1), node->Values[0]), VariantType::Float);
         auto framesXY = Value::Cast(tryGetValue(node->GetBox(2), node->Values[1]), VariantType::Float2);
         auto invertX = Value::Cast(tryGetValue(node->GetBox(3), node->Values[2]), VariantType::Float);
         auto invertY = Value::Cast(tryGetValue(node->GetBox(4), node->Values[3]), VariantType::Float);
-
-        // Write operations
-        auto framesCount = writeLocal(VariantType::Float, String::Format(TEXT("{0}.x * {1}.y"), framesXY.Value, framesXY.Value), node);
-        frame = writeLocal(VariantType::Float, String::Format(TEXT("fmod({0}, {1})"), frame.Value, framesCount.Value), node);
-        auto framesXYInv = writeOperation2(node, Value::One.AsFloat2(), framesXY, '/');
-        auto frameY = writeLocal(VariantType::Float, String::Format(TEXT("abs({0} * {1}.y - (floor({2} * {3}.x) + {0} * 1))"), invertY.Value, framesXY.Value, frame.Value, framesXYInv.Value), node);
-        auto frameX = writeLocal(VariantType::Float, String::Format(TEXT("abs({0} * {1}.x - (({2} - {1}.x * floor({2} * {3}.x)) + {0} * 1))"), invertX.Value, framesXY.Value, frame.Value, framesXYInv.Value), node);
-        value = writeLocal(VariantType::Float2, String::Format(TEXT("({3} + float2({0}, {1})) * {2}"), frameX.Value, frameY.Value, framesXYInv.Value, uv.Value), node);
+        value = writeLocal(VariantType::Float2, String::Format(TEXT("Flipbook({0}, {1}, {2}, float2({3}, {4}))"), uv.Value, frame.Value, framesXY.Value, invertX.Value, invertY.Value), node);
         break;
     }
     // Sample Global SDF
@@ -649,7 +657,8 @@ void MaterialGenerator::ProcessGroupTextures(Box* box, Node* node, Value& value)
     {
         auto param = findOrAddGlobalSDF();
         Value worldPosition = tryGetValue(node->GetBox(1), Value(VariantType::Float3, TEXT("input.WorldPosition.xyz"))).Cast(VariantType::Float3);
-        value = writeLocal(VariantType::Float, String::Format(TEXT("SampleGlobalSDF({0}, {0}_Tex, {1})"), param.ShaderName, worldPosition.Value), node);
+        Value startCascade = tryGetValue(node->TryGetBox(2), 0, Value::Zero).Cast(VariantType::Uint);
+        value = writeLocal(VariantType::Float, String::Format(TEXT("SampleGlobalSDF({0}, {0}_Tex, {0}_Mip, {1}, {2})"), param.ShaderName, worldPosition.Value, startCascade.Value), node);
         _includes.Add(TEXT("./Flax/GlobalSignDistanceField.hlsl"));
         break;
     }
@@ -660,8 +669,9 @@ void MaterialGenerator::ProcessGroupTextures(Box* box, Node* node, Value& value)
         auto distanceBox = node->GetBox(2);
         auto param = findOrAddGlobalSDF();
         Value worldPosition = tryGetValue(node->GetBox(1), Value(VariantType::Float3, TEXT("input.WorldPosition.xyz"))).Cast(VariantType::Float3);
+        Value startCascade = tryGetValue(node->TryGetBox(3), 0, Value::Zero).Cast(VariantType::Uint);
         auto distance = writeLocal(VariantType::Float, node);
-        auto gradient = writeLocal(VariantType::Float3, String::Format(TEXT("SampleGlobalSDFGradient({0}, {0}_Tex, {1}, {2})"), param.ShaderName, worldPosition.Value, distance.Value), node);
+        auto gradient = writeLocal(VariantType::Float3, String::Format(TEXT("SampleGlobalSDFGradient({0}, {0}_Tex, {0}_Mip, {1}, {2}, {3})"), param.ShaderName, worldPosition.Value, distance.Value, startCascade.Value), node);
         _includes.Add(TEXT("./Flax/GlobalSignDistanceField.hlsl"));
         gradientBox->Cache = gradient;
         distanceBox->Cache = distance;
@@ -671,51 +681,58 @@ void MaterialGenerator::ProcessGroupTextures(Box* box, Node* node, Value& value)
     // World Triplanar Texture
     case 16:
     {
-        // Get input boxes
         auto textureBox = node->GetBox(0);
         auto scaleBox = node->GetBox(1);
         auto blendBox = node->GetBox(2);
-
         if (!textureBox->HasConnection())
         {
             // No texture to sample
             value = Value::Zero;
             break;
         }
-
-        if (!CanUseSample(_treeType))
-        {
-            // Must sample texture in pixel shader
-            value = Value::Zero;
-            break;
-        }
-
+        const bool canUseSample = CanUseSample(_treeType);
         const auto texture = eatBox(textureBox->GetParent<Node>(), textureBox->FirstConnection());
-        const auto scale = tryGetValue(scaleBox, node->Values[0]).AsFloat3();
+        const auto scale = tryGetValue(scaleBox, node->Values[0]).AsFloat4();
         const auto blend = tryGetValue(blendBox, node->Values[1]).AsFloat();
-
         auto result = writeLocal(Value::InitForZero(ValueType::Float4), node);
-
         const String triplanarTexture = String::Format(TEXT(
             "	{{\n"
             "   float3 worldPos = input.WorldPosition.xyz * ({1} * 0.001f);\n"
             "   float3 normal = abs(input.TBN[2]);\n"
             "   normal = pow(normal, {2});\n"
             "   normal = normal / (normal.x + normal.y + normal.z);\n"
-
-            "   {3} += {0}.Sample(SamplerLinearWrap, worldPos.yz) * normal.x;\n"
-            "   {3} += {0}.Sample(SamplerLinearWrap, worldPos.xz) * normal.y;\n"
-            "   {3} += {0}.Sample(SamplerLinearWrap, worldPos.xy) * normal.z;\n"
+            "   {3} += {0}.{4}(SamplerLinearWrap, worldPos.yz{5}) * normal.x;\n"
+            "   {3} += {0}.{4}(SamplerLinearWrap, worldPos.xz{5}) * normal.y;\n"
+            "   {3} += {0}.{4}(SamplerLinearWrap, worldPos.xy{5}) * normal.z;\n"
             "	}}\n"
         ),
                                                        texture.Value, //  {0}
                                                        scale.Value, //  {1}
                                                        blend.Value, //  {2}
-                                                       result.Value //  {3}
+                                                       result.Value, //  {3}
+                                                       canUseSample ? TEXT("Sample") : TEXT("SampleLevel"), //  {4}
+                                                       canUseSample ? TEXT("") : TEXT(", 0") //  {5}
         );
-
         _writer.Write(*triplanarTexture);
         value = result;
+        break;
+    }
+    // Get Lightmap UV
+    case 18: 
+    {
+        auto output = writeLocal(Value::InitForZero(ValueType::Float2), node);
+        auto lightmapUV = String::Format(TEXT(
+            "{{\n"
+            "#if USE_LIGHTMAP\n"
+            "\t {0} = input.LightmapUV;\n"
+            "#else\n"
+            "\t {0} = float2(0,0);\n"
+            "#endif\n"
+            "}}\n"
+        ), output.Value);
+        _writer.Write(*lightmapUV);
+        value = output;
+        break;
     }
     default:
         break;

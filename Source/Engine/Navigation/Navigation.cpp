@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "Navigation.h"
 #include "NavigationSettings.h"
@@ -9,6 +9,8 @@
 #include "Engine/Content/JsonAsset.h"
 #include "Engine/Threading/Threading.h"
 #if USE_EDITOR
+#include "Editor/Editor.h"
+#include "Editor/Managed/ManagedEditor.h"
 #include "Engine/Level/Level.h"
 #include "Engine/Level/Scene/Scene.h"
 #endif
@@ -220,6 +222,17 @@ void NavigationSettings::Apply()
 #endif
         }
     }
+
+#if USE_EDITOR
+    if (!Editor::IsPlayMode && Editor::Managed && Editor::Managed->CanAutoBuildNavMesh())
+    {
+        // Rebuild all navmeshs after apply changes on navigation
+        for (auto scene : Level::Scenes)
+        {
+            Navigation::BuildNavMesh(scene);
+        }
+    }
+#endif
 }
 
 void NavigationSettings::Deserialize(DeserializeStream& stream, ISerializeModifier* modifier)
@@ -312,11 +325,11 @@ bool Navigation::TestPath(const Vector3& startPosition, const Vector3& endPositi
     return NavMeshes.First()->TestPath(startPosition, endPosition);
 }
 
-bool Navigation::ProjectPoint(const Vector3& point, Vector3& result)
+bool Navigation::FindClosestPoint(const Vector3& point, Vector3& result)
 {
     if (NavMeshes.IsEmpty())
         return false;
-    return NavMeshes.First()->ProjectPoint(point, result);
+    return NavMeshes.First()->FindClosestPoint(point, result);
 }
 
 bool Navigation::FindRandomPoint(Vector3& result)

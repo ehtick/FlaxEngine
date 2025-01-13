@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 namespace FlaxEngine
 {
@@ -12,7 +12,7 @@ namespace FlaxEngine
             Position = new Float2(100, 100),
             Size = new Float2(640, 480),
             MinimumSize = Float2.One,
-            MaximumSize = new Float2(4100, 4100),
+            MaximumSize = Float2.Zero, // Unlimited size
             StartPosition = WindowStartPosition.CenterParent,
             HasBorder = true,
             ShowInTaskbar = true,

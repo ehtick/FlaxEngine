@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "Version.h"
 #include "Engine/Core/Types/StringBuilder.h"
@@ -7,15 +7,15 @@ Version::Version(int32 major, int32 minor, int32 build, int32 revision)
 {
     _major = Math::Max(major, 0);
     _minor = Math::Max(minor, 0);
-    _build = Math::Max(build, 0);
-    _revision = Math::Max(revision, 0);
+    _build = Math::Max(build, -1);
+    _revision = Math::Max(revision, -1);
 }
 
 Version::Version(int32 major, int32 minor, int32 build)
 {
     _major = Math::Max(major, 0);
     _minor = Math::Max(minor, 0);
-    _build = Math::Max(build, 0);
+    _build = Math::Max(build, -1);
     _revision = -1;
 }
 

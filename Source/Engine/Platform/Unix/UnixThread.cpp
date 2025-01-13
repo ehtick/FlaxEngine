@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #if PLATFORM_UNIX
 
@@ -26,6 +26,12 @@ int32 UnixThread::Start(pthread_attr_t& attr)
 void* UnixThread::ThreadProc(void* pThis)
 {
     auto thread = (UnixThread*)pThis;
+#if PLATFORM_APPLE_FAMILY
+    // Apple doesn't support creating named thread so assign name here
+    {
+        pthread_setname_np(StringAnsi(thread->GetName()).Get());
+    }
+#endif
     const int32 exitCode = thread->Run();
     return (void*)(uintptr)exitCode;
 }

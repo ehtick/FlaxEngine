@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "ShaderGraphValue.h"
 #include "Engine/Core/Log.h"
@@ -271,6 +271,48 @@ ShaderGraphValue ShaderGraphValue::InitForOne(VariantType::Types type)
     return ShaderGraphValue(type, String(v));
 }
 
+ShaderGraphValue ShaderGraphValue::GetY() const
+{
+    switch (Type)
+    {
+    case VariantType::Float2:
+    case VariantType::Float3:
+    case VariantType::Float4:
+    case VariantType::Double2:
+    case VariantType::Double3:
+    case VariantType::Double4:
+        return ShaderGraphValue(VariantType::Types::Float, Value + _subs[1]);
+    default:
+        return Zero;
+    }
+}
+
+ShaderGraphValue ShaderGraphValue::GetZ() const
+{
+    switch (Type)
+    {
+    case VariantType::Float3:
+    case VariantType::Float4:
+    case VariantType::Double3:
+    case VariantType::Double4:
+        return ShaderGraphValue(VariantType::Types::Float, Value + _subs[2]);
+    default:
+        return Zero;
+    }
+}
+
+ShaderGraphValue ShaderGraphValue::GetW() const
+{
+    switch (Type)
+    {
+    case VariantType::Float4:
+    case VariantType::Double4:
+        return ShaderGraphValue(VariantType::Types::Float, Value + _subs[3]);
+    default:
+        return One;
+    }
+}
+
 ShaderGraphValue ShaderGraphValue::Cast(const ShaderGraphValue& v, VariantType::Types to)
 {
     // If they are the same types or input value is empty, then just return value
@@ -418,6 +460,7 @@ ShaderGraphValue ShaderGraphValue::Cast(const ShaderGraphValue& v, VariantType::
     case VariantType::Types::Float4:
     case VariantType::Types::Double4:
     case VariantType::Types::Color:
+    case VariantType::Types::Quaternion:
         switch (v.Type)
         {
         case VariantType::Types::Bool:
@@ -439,16 +482,6 @@ ShaderGraphValue ShaderGraphValue::Cast(const ShaderGraphValue& v, VariantType::
         case VariantType::Types::Float4:
         case VariantType::Types::Double4:
         case VariantType::Types::Quaternion:
-            format = TEXT("{}");
-            break;
-        }
-        break;
-    case VariantType::Types::Quaternion:
-        switch (v.Type)
-        {
-        case VariantType::Types::Color:
-        case VariantType::Types::Float4:
-        case VariantType::Types::Double4:
             format = TEXT("{}");
             break;
         }

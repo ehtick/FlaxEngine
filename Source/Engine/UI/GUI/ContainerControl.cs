@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -356,7 +356,7 @@ namespace FlaxEngine.GUI
             for (int i = _children.Count - 1; i >= 0; i--)
             {
                 var child = _children[i];
-                if (IntersectsChildContent(child, point, out var childLocation))
+                if (child.Visible && IntersectsChildContent(child, point, out var childLocation))
                 {
                     var containerControl = child as ContainerControl;
                     var childAtRecursive = containerControl?.GetChildAtRecursive(childLocation);
@@ -448,6 +448,8 @@ namespace FlaxEngine.GUI
         internal virtual void AddChildInternal(Control child)
         {
             Assert.IsNotNull(child, "Invalid control.");
+            if (Parent == child)
+                throw new InvalidOperationException();
 
             // Add child
             _children.Add(child);
@@ -748,7 +750,7 @@ namespace FlaxEngine.GUI
             {
                 if (base.IsTouchOver)
                     return true;
-                for (int i = 0; i < _children.Count && _children.Count > 0; i++)
+                for (int i = 0; i < _children.Count; i++)
                 {
                     if (_children[i].IsTouchOver)
                         return true;
@@ -820,13 +822,14 @@ namespace FlaxEngine.GUI
         protected virtual void DrawChildren()
         {
             // Draw all visible child controls
+            var children = _children;
             if (_cullChildren)
             {
                 Render2D.PeekClip(out var globalClipping);
                 Render2D.PeekTransform(out var globalTransform);
-                for (int i = 0; i < _children.Count; i++)
+                for (int i = 0; i < children.Count; i++)
                 {
-                    var child = _children[i];
+                    var child = children[i];
                     if (child.Visible)
                     {
                         Matrix3x3.Multiply(ref child._cachedTransform, ref globalTransform, out var globalChildTransform);
@@ -842,9 +845,9 @@ namespace FlaxEngine.GUI
             }
             else
             {
-                for (int i = 0; i < _children.Count; i++)
+                for (int i = 0; i < children.Count; i++)
                 {
-                    var child = _children[i];
+                    var child = children[i];
                     if (child.Visible)
                     {
                         Render2D.PushTransform(ref child._cachedTransform);
@@ -874,6 +877,30 @@ namespace FlaxEngine.GUI
 
             if (!wasLocked)
                 UnlockChildrenRecursive();
+        }
+
+        /// <inheritdoc />
+        public override bool RayCast(ref Float2 location, out Control hit)
+        {
+            if (RayCastChildren(ref location, out hit))
+                return true;
+            return base.RayCast(ref location, out hit);
+        }
+
+        internal bool RayCastChildren(ref Float2 location, out Control hit)
+        {
+            for (int i = _children.Count - 1; i >= 0 && _children.Count > 0; i--)
+            {
+                var child = _children[i];
+                if (child.Visible)
+                {
+                    IntersectsChildContent(child, location, out var childLocation);
+                    if (child.RayCast(ref childLocation, out hit))
+                        return true;
+                }
+            }
+            hit = null;
+            return false;
         }
 
         /// <inheritdoc />
@@ -933,7 +960,7 @@ namespace FlaxEngine.GUI
         public override void OnMouseLeave()
         {
             // Check all children collisions with mouse and fire events for them
-            for (int i = 0; i < _children.Count && _children.Count > 0; i++)
+            for (int i = 0; i < _children.Count; i++)
             {
                 var child = _children[i];
                 if (child.Visible && child.Enabled && child.IsMouseOver)
@@ -1036,7 +1063,7 @@ namespace FlaxEngine.GUI
             if (base.IsTouchPointerOver(pointerId))
                 return true;
 
-            for (int i = 0; i < _children.Count && _children.Count > 0; i++)
+            for (int i = 0; i < _children.Count; i++)
             {
                 if (_children[i].IsTouchPointerOver(pointerId))
                     return true;
@@ -1141,7 +1168,7 @@ namespace FlaxEngine.GUI
         /// <inheritdoc />
         public override void OnTouchLeave(int pointerId)
         {
-            for (int i = 0; i < _children.Count && _children.Count > 0; i++)
+            for (int i = 0; i < _children.Count; i++)
             {
                 var child = _children[i];
                 if (child.Visible && child.Enabled && child.IsTouchPointerOver(pointerId))
@@ -1156,7 +1183,7 @@ namespace FlaxEngine.GUI
         /// <inheritdoc />
         public override bool OnCharInput(char c)
         {
-            for (int i = 0; i < _children.Count && _children.Count > 0; i++)
+            for (int i = 0; i < _children.Count; i++)
             {
                 var child = _children[i];
                 if (child.Enabled && child.ContainsFocus)
@@ -1170,7 +1197,7 @@ namespace FlaxEngine.GUI
         /// <inheritdoc />
         public override bool OnKeyDown(KeyboardKeys key)
         {
-            for (int i = 0; i < _children.Count && _children.Count > 0; i++)
+            for (int i = 0; i < _children.Count; i++)
             {
                 var child = _children[i];
                 if (child.Enabled && child.ContainsFocus)
@@ -1184,7 +1211,7 @@ namespace FlaxEngine.GUI
         /// <inheritdoc />
         public override void OnKeyUp(KeyboardKeys key)
         {
-            for (int i = 0; i < _children.Count && _children.Count > 0; i++)
+            for (int i = 0; i < _children.Count; i++)
             {
                 var child = _children[i];
                 if (child.Enabled && child.ContainsFocus)
@@ -1267,7 +1294,7 @@ namespace FlaxEngine.GUI
             base.OnDragLeave();
 
             // Check all children collisions with mouse and fire events for them
-            for (int i = 0; i < _children.Count && _children.Count > 0; i++)
+            for (int i = 0; i < _children.Count; i++)
             {
                 var child = _children[i];
                 if (child.IsDragOver)

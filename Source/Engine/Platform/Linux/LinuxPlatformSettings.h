@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -14,8 +14,8 @@ class Texture;
 /// </summary>
 API_CLASS(sealed, Namespace="FlaxEditor.Content.Settings") class FLAXENGINE_API LinuxPlatformSettings : public SettingsBase
 {
-DECLARE_SCRIPTING_TYPE_MINIMAL(LinuxPlatformSettings);
-public:
+    DECLARE_SCRIPTING_TYPE_MINIMAL(LinuxPlatformSettings);
+    API_AUTO_SERIALIZATION();
 
     /// <summary>
     /// The default game window mode.
@@ -65,25 +65,10 @@ public:
     API_FIELD(Attributes="EditorOrder(2000), DefaultValue(true), EditorDisplay(\"Graphics\")")
     bool SupportVulkan = true;
 
-public:
-
     /// <summary>
     /// Gets the instance of the settings asset (default value if missing). Object returned by this method is always loaded with valid data to use.
     /// </summary>
     static LinuxPlatformSettings* Get();
-
-    // [SettingsBase]
-    void Deserialize(DeserializeStream& stream, ISerializeModifier* modifier) final override
-    {
-        DESERIALIZE(WindowMode);
-        DESERIALIZE(ScreenWidth);
-        DESERIALIZE(ScreenHeight);
-        DESERIALIZE(RunInBackground);
-        DESERIALIZE(ResizableWindow);
-        DESERIALIZE(ForceSingleInstance);
-        DESERIALIZE(OverrideIcon);
-        DESERIALIZE(SupportVulkan);
-    }
 };
 
 #if PLATFORM_LINUX

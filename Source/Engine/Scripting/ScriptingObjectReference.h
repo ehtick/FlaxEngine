@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -47,8 +47,12 @@ public:
     /// </summary>
     ~ScriptingObjectReferenceBase()
     {
-        if (_object)
-            _object->Deleted.Unbind<ScriptingObjectReferenceBase, &ScriptingObjectReferenceBase::OnDeleted>(this);
+        ScriptingObject* obj = _object;
+        if (obj)
+        {
+            _object = nullptr;
+            obj->Deleted.Unbind<ScriptingObjectReferenceBase, &ScriptingObjectReferenceBase::OnDeleted>(this);
+        }
     }
 
 public:

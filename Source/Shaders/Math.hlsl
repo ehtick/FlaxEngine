@@ -1,7 +1,10 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #ifndef __MATH__
 #define __MATH__
+
+#define RadiansToDegrees (180.0f / PI)
+#define DegreesToRadians (PI / 180.0f)
 
 uint NextPow2(uint value)
 {
@@ -218,10 +221,10 @@ float4 ClampedPow(float4 x, float4 y)
 
 float4 FindQuatBetween(float3 from, float3 to)
 {
+    // http://lolengine.net/blog/2014/02/24/quaternion-from-two-vectors-final
     float normAB = 1.0f;
     float w = normAB + dot(from, to);
     float4 result;
-
     if (w >= 1e-6f * normAB)
     {
         result = float4
@@ -234,16 +237,14 @@ float4 FindQuatBetween(float3 from, float3 to)
     }
     else
     {
-        w = 0.f;
         result = abs(from.x) > abs(from.y)
-                     ? float4(-from.z, 0.f, from.x, w)
-                     : float4(0.f, -from.z, from.y, w);
+                     ? float4(-from.z, 0.f, from.x, 0.0f)
+                     : float4(0.f, -from.z, from.y, 0.0f);
     }
-
     return normalize(result);
 }
 
-// Rotates Position about the given axis by the given angle, in radians, and returns the offset to position
+// Rotates position about the input axis by the given angle (in radians), and returns the delta to position
 float3 RotateAboutAxis(float4 normalizedRotationAxisAndAngle, float3 positionOnAxis, float3 position)
 {
     float3 pointOnAxis = positionOnAxis + normalizedRotationAxisAndAngle.xyz * dot(normalizedRotationAxisAndAngle.xyz, position - positionOnAxis);

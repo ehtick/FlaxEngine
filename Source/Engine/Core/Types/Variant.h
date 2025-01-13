@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -105,7 +105,7 @@ public:
 
     explicit VariantType(Types type, const StringView& typeName);
     explicit VariantType(Types type, const StringAnsiView& typeName);
-    explicit VariantType(Types type, MClass* klass);
+    explicit VariantType(Types type, const MClass* klass);
     explicit VariantType(const StringAnsiView& typeName);
     VariantType(const VariantType& other);
     VariantType(VariantType&& other) noexcept;
@@ -372,11 +372,17 @@ public:
     // Inlines potential value type into in-built format (eg. Vector3 stored as Structure, or String stored as ManagedObject).
     void Inline();
 
+    // Inverts the inlined value from in-built format into generic storage (eg. Float3 from inlined format into Structure).
+    void InvertInline();
+
     // Allocates the Variant of the specific type (eg. structure or object or value).
     static Variant NewValue(const StringAnsiView& typeName);
 
     // Frees the object or data owned by this Variant container (eg. structure or object).
     void DeleteValue();
+
+    // Parses the text into the Variant value. Allows to specify explicit value type.
+    static Variant Parse(const StringView& text, const VariantType& type = VariantType());
 
     FORCE_INLINE Variant Cast(const VariantType& to) const
     {

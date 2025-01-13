@@ -1,9 +1,10 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
 #include "Engine/Core/Memory/Memory.h"
 #include "Engine/Core/Memory/Allocation.h"
+#include "Engine/Core/Collections/BucketState.h"
 #include "Engine/Core/Collections/HashFunctions.h"
 #include "Engine/Core/Collections/Config.h"
 
@@ -25,90 +26,110 @@ public:
     {
         friend Dictionary;
 
-        enum State : byte
-        {
-            Empty = 0,
-            Deleted = 1,
-            Occupied = 2,
-        };
-
         /// <summary>The key.</summary>
         KeyType Key;
         /// <summary>The value.</summary>
         ValueType Value;
 
     private:
-        State _state;
+        BucketState _state;
 
-        void Free()
+        FORCE_INLINE void Free()
         {
-            if (_state == Occupied)
+            if (_state == BucketState::Occupied)
             {
                 Memory::DestructItem(&Key);
                 Memory::DestructItem(&Value);
             }
-            _state = Empty;
+            _state = BucketState::Empty;
         }
 
-        void Delete()
+        FORCE_INLINE void Delete()
         {
-            _state = Deleted;
+            _state = BucketState::Deleted;
             Memory::DestructItem(&Key);
             Memory::DestructItem(&Value);
         }
 
         template<typename KeyComparableType>
-        void Occupy(const KeyComparableType& key)
+        FORCE_INLINE void Occupy(const KeyComparableType& key)
         {
             Memory::ConstructItems(&Key, &key, 1);
             Memory::ConstructItem(&Value);
-            _state = Occupied;
+            _state = BucketState::Occupied;
         }
 
         template<typename KeyComparableType>
-        void Occupy(const KeyComparableType& key, const ValueType& value)
+        FORCE_INLINE void Occupy(const KeyComparableType& key, const ValueType& value)
         {
             Memory::ConstructItems(&Key, &key, 1);
             Memory::ConstructItems(&Value, &value, 1);
-            _state = Occupied;
+            _state = BucketState::Occupied;
         }
 
         template<typename KeyComparableType>
-        void Occupy(const KeyComparableType& key, ValueType&& value)
+        FORCE_INLINE void Occupy(const KeyComparableType& key, ValueType&& value)
         {
             Memory::ConstructItems(&Key, &key, 1);
             Memory::MoveItems(&Value, &value, 1);
-            _state = Occupied;
+            _state = BucketState::Occupied;
         }
 
         FORCE_INLINE bool IsEmpty() const
         {
-            return _state == Empty;
+            return _state == BucketState::Empty;
         }
 
         FORCE_INLINE bool IsDeleted() const
         {
-            return _state == Deleted;
+            return _state == BucketState::Deleted;
         }
 
         FORCE_INLINE bool IsOccupied() const
         {
-            return _state == Occupied;
+            return _state == BucketState::Occupied;
         }
 
         FORCE_INLINE bool IsNotOccupied() const
         {
-            return _state != Occupied;
+            return _state != BucketState::Occupied;
         }
     };
 
-    typedef typename AllocationType::template Data<Bucket> AllocationData;
+    using AllocationData = typename AllocationType::template Data<Bucket>;
 
 private:
     int32 _elementsCount = 0;
     int32 _deletedCount = 0;
     int32 _size = 0;
     AllocationData _allocation;
+
+    FORCE_INLINE static void MoveToEmpty(AllocationData& to, AllocationData& from, const int32 fromSize)
+    {
+        if IF_CONSTEXPR (AllocationType::HasSwap)
+            to.Swap(from);
+        else
+        {
+            to.Allocate(fromSize);
+            Bucket* toData = to.Get();
+            Bucket* fromData = from.Get();
+            for (int32 i = 0; i < fromSize; i++)
+            {
+                Bucket& fromBucket = fromData[i];
+                if (fromBucket.IsOccupied())
+                {
+                    Bucket& toBucket = toData[i];
+                    Memory::MoveItems(&toBucket.Key, &fromBucket.Key, 1);
+                    Memory::MoveItems(&toBucket.Value, &fromBucket.Value, 1);
+                    toBucket._state = BucketState::Occupied;
+                    Memory::DestructItem(&fromBucket.Key);
+                    Memory::DestructItem(&fromBucket.Value);
+                    fromBucket._state = BucketState::Empty;
+                }
+            }
+            from.Free();
+        }
+    }
 
 public:
     /// <summary>
@@ -122,7 +143,7 @@ public:
     /// Initializes a new instance of the <see cref="Dictionary"/> class.
     /// </summary>
     /// <param name="capacity">The initial capacity.</param>
-    Dictionary(int32 capacity)
+    explicit Dictionary(const int32 capacity)
     {
         SetCapacity(capacity);
     }
@@ -132,9 +153,6 @@ public:
     /// </summary>
     /// <param name="other">The other collection to move.</param>
     Dictionary(Dictionary&& other) noexcept
-        : _elementsCount(other._elementsCount)
-        , _deletedCount(other._deletedCount)
-        , _size(other._size)
     {
         _elementsCount = other._elementsCount;
         _deletedCount = other._deletedCount;
@@ -142,7 +160,7 @@ public:
         other._elementsCount = 0;
         other._deletedCount = 0;
         other._size = 0;
-        _allocation.Swap(other._allocation);
+        MoveToEmpty(_allocation, other._allocation, _size);
     }
 
     /// <summary>
@@ -183,7 +201,7 @@ public:
             other._elementsCount = 0;
             other._deletedCount = 0;
             other._size = 0;
-            _allocation.Swap(other._allocation);
+            MoveToEmpty(_allocation, other._allocation, _size);
         }
         return *this;
     }
@@ -265,7 +283,7 @@ public:
         {
         }
 
-        Iterator(Iterator&& i)
+        Iterator(Iterator&& i) noexcept
             : _collection(i._collection)
             , _index(i._index)
         {
@@ -324,6 +342,13 @@ public:
             return *this;
         }
 
+        Iterator& operator=(Iterator&& v) noexcept
+        {
+            _collection = v._collection;
+            _index = v._index;
+            return *this;
+        }
+
         Iterator& operator++()
         {
             const int32 capacity = _collection->_size;
@@ -332,8 +357,9 @@ public:
                 const Bucket* data = _collection->_allocation.Get();
                 do
                 {
-                    _index++;
-                } while (_index != capacity && data[_index].IsNotOccupied());
+                    ++_index;
+                }
+                while (_index != capacity && data[_index].IsNotOccupied());
             }
             return *this;
         }
@@ -352,8 +378,9 @@ public:
                 const Bucket* data = _collection->_allocation.Get();
                 do
                 {
-                    _index--;
-                } while (_index > 0 && data[_index].IsNotOccupied());
+                    --_index;
+                }
+                while (_index > 0 && data[_index].IsNotOccupied());
             }
             return *this;
         }
@@ -375,8 +402,12 @@ public:
     template<typename KeyComparableType>
     ValueType& At(const KeyComparableType& key)
     {
+        // Check if need to rehash elements (prevent many deleted elements that use too much of capacity)
+        if (_deletedCount > _size / DICTIONARY_DEFAULT_SLACK_SCALE)
+            Compact();
+
         // Ensure to have enough memory for the next item (in case of new element insertion)
-        EnsureCapacity(_elementsCount + _deletedCount + 1);
+        EnsureCapacity((_elementsCount + 1) * DICTIONARY_DEFAULT_SLACK_SCALE + _deletedCount);
 
         // Find location of the item or place to insert it
         FindPositionResult pos;
@@ -388,9 +419,9 @@ public:
 
         // Insert
         ASSERT(pos.FreeSlotIndex != -1);
+        ++_elementsCount;
         Bucket& bucket = _allocation.Get()[pos.FreeSlotIndex];
         bucket.Occupy(key);
-        _elementsCount++;
         return bucket.Value;
     }
 
@@ -463,7 +494,7 @@ public:
         FindPosition(key, pos);
         if (pos.ObjectIndex == -1)
             return nullptr;
-        return (ValueType*)&_allocation.Get()[pos.ObjectIndex].Value;
+        return const_cast<ValueType*>(&_allocation.Get()[pos.ObjectIndex].Value); //TODO This one is problematic. I think this entire method should be removed.
     }
 
 public:
@@ -493,7 +524,7 @@ public:
         for (Iterator i = Begin(); i.IsNotEnd(); ++i)
         {
             if (i->Value)
-                Delete(i->Value);
+                ::Delete(i->Value);
         }
         Clear();
     }
@@ -503,13 +534,13 @@ public:
     /// </summary>
     /// <param name="capacity">The new capacity.</param>
     /// <param name="preserveContents">Enables preserving collection contents during resizing.</param>
-    void SetCapacity(int32 capacity, bool preserveContents = true)
+    void SetCapacity(int32 capacity, const bool preserveContents = true)
     {
         if (capacity == Capacity())
             return;
         ASSERT(capacity >= 0);
         AllocationData oldAllocation;
-        oldAllocation.Swap(_allocation);
+        MoveToEmpty(oldAllocation, _allocation, _size);
         const int32 oldSize = _size;
         const int32 oldElementsCount = _elementsCount;
         _deletedCount = _elementsCount = 0;
@@ -529,17 +560,26 @@ public:
             _allocation.Allocate(capacity);
             Bucket* data = _allocation.Get();
             for (int32 i = 0; i < capacity; i++)
-                data[i]._state = Bucket::Empty;
+                data[i]._state = BucketState::Empty;
         }
         _size = capacity;
         Bucket* oldData = oldAllocation.Get();
-        if (oldElementsCount != 0 && preserveContents)
+        if (oldElementsCount != 0 && capacity != 0 && preserveContents)
         {
-            // TODO; move keys and values on realloc
+            FindPositionResult pos;
             for (int32 i = 0; i < oldSize; i++)
             {
-                if (oldData[i].IsOccupied())
-                    Add(oldData[i].Key, MoveTemp(oldData[i].Value));
+                Bucket& oldBucket = oldData[i];
+                if (oldBucket.IsOccupied())
+                {
+                    FindPosition(oldBucket.Key, pos);
+                    ASSERT(pos.FreeSlotIndex != -1);
+                    Bucket* bucket = &_allocation.Get()[pos.FreeSlotIndex];
+                    Memory::MoveItems(&bucket->Key, &oldBucket.Key, 1);
+                    Memory::MoveItems(&bucket->Value, &oldBucket.Value, 1);
+                    bucket->_state = BucketState::Occupied;
+                    ++_elementsCount;
+                }
             }
         }
         if (oldElementsCount != 0)
@@ -554,13 +594,13 @@ public:
     /// </summary>
     /// <param name="minCapacity">The minimum required capacity.</param>
     /// <param name="preserveContents">True if preserve collection data when changing its size, otherwise collection after resize will be empty.</param>
-    void EnsureCapacity(int32 minCapacity, bool preserveContents = true)
+    void EnsureCapacity(int32 minCapacity, const bool preserveContents = true)
     {
         if (_size >= minCapacity)
             return;
-        if (minCapacity < DICTIONARY_DEFAULT_CAPACITY)
-            minCapacity = DICTIONARY_DEFAULT_CAPACITY;
-        const int32 capacity = _allocation.CalculateCapacityGrow(_size, minCapacity);
+        int32 capacity = _allocation.CalculateCapacityGrow(_size, minCapacity);
+        if (capacity < DICTIONARY_DEFAULT_CAPACITY)
+            capacity = DICTIONARY_DEFAULT_CAPACITY;
         SetCapacity(capacity, preserveContents);
     }
 
@@ -570,10 +610,17 @@ public:
     /// <param name="other">The other collection.</param>
     void Swap(Dictionary& other)
     {
-        ::Swap(_elementsCount, other._elementsCount);
-        ::Swap(_deletedCount, other._deletedCount);
-        ::Swap(_size, other._size);
-        _allocation.Swap(other._allocation);
+        if IF_CONSTEXPR (AllocationType::HasSwap)
+        {
+            ::Swap(_elementsCount, other._elementsCount);
+            ::Swap(_deletedCount, other._deletedCount);
+            ::Swap(_size, other._size);
+            _allocation.Swap(other._allocation);
+        }
+        else
+        {
+            ::Swap(other, *this);
+        }
     }
 
 public:
@@ -584,24 +631,10 @@ public:
     /// <param name="value">The value.</param>
     /// <returns>Weak reference to the stored bucket.</returns>
     template<typename KeyComparableType>
-    Bucket* Add(const KeyComparableType& key, const ValueType& value)
+    FORCE_INLINE Bucket* Add(const KeyComparableType& key, const ValueType& value)
     {
-        // Ensure to have enough memory for the next item (in case of new element insertion)
-        EnsureCapacity(_elementsCount + _deletedCount + 1);
-
-        // Find location of the item or place to insert it
-        FindPositionResult pos;
-        FindPosition(key, pos);
-
-        // Ensure key is unknown
-        ASSERT(pos.ObjectIndex == -1 && "That key has been already added to the dictionary.");
-
-        // Insert
-        ASSERT(pos.FreeSlotIndex != -1);
-        Bucket* bucket = &_allocation.Get()[pos.FreeSlotIndex];
+        Bucket* bucket = OnAdd(key);
         bucket->Occupy(key, value);
-        _elementsCount++;
-
         return bucket;
     }
 
@@ -612,24 +645,10 @@ public:
     /// <param name="value">The value.</param>
     /// <returns>Weak reference to the stored bucket.</returns>
     template<typename KeyComparableType>
-    Bucket* Add(const KeyComparableType& key, ValueType&& value)
+    FORCE_INLINE Bucket* Add(const KeyComparableType& key, ValueType&& value)
     {
-        // Ensure to have enough memory for the next item (in case of new element insertion)
-        EnsureCapacity(_elementsCount + _deletedCount + 1);
-
-        // Find location of the item or place to insert it
-        FindPositionResult pos;
-        FindPosition(key, pos);
-
-        // Ensure key is unknown
-        ASSERT(pos.ObjectIndex == -1 && "That key has been already added to the dictionary.");
-
-        // Insert
-        ASSERT(pos.FreeSlotIndex != -1);
-        Bucket* bucket = &_allocation.Get()[pos.FreeSlotIndex];
+        Bucket* bucket = OnAdd(key);
         bucket->Occupy(key, MoveTemp(value));
-        _elementsCount++;
-
         return bucket;
     }
 
@@ -659,8 +678,8 @@ public:
         if (pos.ObjectIndex != -1)
         {
             _allocation.Get()[pos.ObjectIndex].Delete();
-            _elementsCount--;
-            _deletedCount++;
+            --_elementsCount;
+            ++_deletedCount;
             return true;
         }
         return false;
@@ -678,8 +697,8 @@ public:
         {
             ASSERT(_allocation.Get()[i._index].IsOccupied());
             _allocation.Get()[i._index].Delete();
-            _elementsCount--;
-            _deletedCount++;
+            --_elementsCount;
+            ++_deletedCount;
             return true;
         }
         return false;
@@ -698,7 +717,7 @@ public:
             if (i->Value == value)
             {
                 Remove(i);
-                result++;
+                ++result;
             }
         }
         return result;
@@ -745,7 +764,7 @@ public:
         if (HasItems())
         {
             const Bucket* data = _allocation.Get();
-            for (int32 i = 0; i < _size; i++)
+            for (int32 i = 0; i < _size; ++i)
             {
                 if (data[i].IsOccupied() && data[i].Value == value)
                     return true;
@@ -765,7 +784,7 @@ public:
         if (HasItems())
         {
             const Bucket* data = _allocation.Get();
-            for (int32 i = 0; i < _size; i++)
+            for (int32 i = 0; i < _size; ++i)
             {
                 if (data[i].IsOccupied() && data[i].Value == value)
                 {
@@ -839,19 +858,19 @@ public:
         return Iterator(this, _size);
     }
 
-    const Iterator begin() const
+    Iterator begin() const
     {
         Iterator i(this, -1);
         ++i;
         return i;
     }
 
-    FORCE_INLINE const Iterator end() const
+    FORCE_INLINE Iterator end() const
     {
         return Iterator(this, _size);
     }
 
-protected:
+private:
     /// <summary>
     /// The result container of the dictionary item lookup searching.
     /// </summary>
@@ -905,10 +924,72 @@ protected:
                 result.ObjectIndex = bucketIndex;
                 return;
             }
-            checksCount++;
+            ++checksCount;
             bucketIndex = (bucketIndex + DICTIONARY_PROB_FUNC(_size, checksCount)) & tableSizeMinusOne;
         }
         result.ObjectIndex = -1;
         result.FreeSlotIndex = insertPos;
+    }
+
+    template<typename KeyComparableType>
+    Bucket* OnAdd(const KeyComparableType& key)
+    {
+        // Check if need to rehash elements (prevent many deleted elements that use too much of capacity)
+        if (_deletedCount > _size / DICTIONARY_DEFAULT_SLACK_SCALE)
+            Compact();
+
+        // Ensure to have enough memory for the next item (in case of new element insertion)
+        EnsureCapacity((_elementsCount + 1) * DICTIONARY_DEFAULT_SLACK_SCALE + _deletedCount);
+
+        // Find location of the item or place to insert it
+        FindPositionResult pos;
+        FindPosition(key, pos);
+
+        // Ensure key is unknown
+        ASSERT(pos.ObjectIndex == -1 && "That key has been already added to the dictionary.");
+
+        // Insert
+        ASSERT(pos.FreeSlotIndex != -1);
+        _elementsCount++;
+        return &_allocation.Get()[pos.FreeSlotIndex];
+    }
+
+    void Compact()
+    {
+        if (_elementsCount == 0)
+        {
+            // Fast path if it's empty
+            Bucket* data = _allocation.Get();
+            for (int32 i = 0; i < _size; i++)
+                data[i]._state = BucketState::Empty;
+        }
+        else
+        {
+            // Rebuild entire table completely
+            AllocationData oldAllocation;
+            MoveToEmpty(oldAllocation, _allocation, _size);
+            _allocation.Allocate(_size);
+            Bucket* data = _allocation.Get();
+            for (int32 i = 0; i < _size; i++)
+                data[i]._state = BucketState::Empty;
+            Bucket* oldData = oldAllocation.Get();
+            FindPositionResult pos;
+            for (int32 i = 0; i < _size; i++)
+            {
+                Bucket& oldBucket = oldData[i];
+                if (oldBucket.IsOccupied())
+                {
+                    FindPosition(oldBucket.Key, pos);
+                    ASSERT(pos.FreeSlotIndex != -1);
+                    Bucket* bucket = &_allocation.Get()[pos.FreeSlotIndex];
+                    Memory::MoveItems(&bucket->Key, &oldBucket.Key, 1);
+                    Memory::MoveItems(&bucket->Value, &oldBucket.Value, 1);
+                    bucket->_state = BucketState::Occupied;
+                }
+            }
+            for (int32 i = 0; i < _size; i++)
+                oldData[i].Free();
+        }
+        _deletedCount = 0;
     }
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 // Interpolation and prediction logic based on https://www.gabrielgambetta.com/client-server-game-architecture.html
 
@@ -301,11 +301,8 @@ void NetworkTransform::Deserialize(NetworkStream* stream)
             _buffer.Clear();
             _bufferHasDeltas = true;
         }
-        // TODO: items are added in order to do batch removal
-        for (int32 i = 0; i < _buffer.Count() && _buffer[i].SequenceIndex < sequenceIndex; i++)
-        {
-            _buffer.RemoveAtKeepOrder(i);
-        }
+        while (_buffer.Count() != 0 && _buffer[0].SequenceIndex < sequenceIndex)
+            _buffer.RemoveAtKeepOrder(0);
 
         // Use received authoritative actor transformation but re-apply all deltas not yet processed by the server due to lag (reconciliation)
         for (auto& e : _buffer)

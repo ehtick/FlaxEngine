@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using FlaxEditor.Actions;
 using FlaxEditor.CustomEditors.Editors;
@@ -37,62 +37,34 @@ public class MissingScriptEditor : GenericEditor
             Parent = _dropPanel,
             Height = 64,
         };
-
         _replaceScriptButton = new Button
         {
             Text = "Replace Script",
             TooltipText = "Replaces the missing script with a given script type",
             AnchorPreset = AnchorPresets.TopCenter,
-            Width = 240,
-            Height = 24,
-            X = -120,
-            Y = 0,
+            Bounds = new Rectangle(-120, 0, 240, 24),
             Parent = replaceScriptPanel,
         };
         _replaceScriptButton.Clicked += OnReplaceScriptButtonClicked;
-
         var replaceAllLabel = new Label
         {
             Text = "Replace all matching missing scripts",
             TooltipText = "Whether or not to apply this script change to all scripts missing the same type.",
             AnchorPreset = AnchorPresets.BottomCenter,
-            Y = -34,
+            Y = -38,
             Parent = replaceScriptPanel,
         };
-        replaceAllLabel.X -= FlaxEngine.GUI.Style.Current.FontSmall.MeasureText(replaceAllLabel.Text).X;
-
         _shouldReplaceAllCheckbox = new CheckBox
         {
             TooltipText = replaceAllLabel.TooltipText,
             AnchorPreset = AnchorPresets.BottomCenter,
-            Y = -34,
+            Y = -38,
             Parent = replaceScriptPanel,
         };
-
-        float centerDifference = (_shouldReplaceAllCheckbox.Right - replaceAllLabel.Left) / 2;
-        replaceAllLabel.X += centerDifference;
-        _shouldReplaceAllCheckbox.X += centerDifference;
+        _shouldReplaceAllCheckbox.X -= _replaceScriptButton.Width * 0.5f + 0.5f;
+        replaceAllLabel.X -= 52;
 
         base.Initialize(layout);
-    }
-
-    private void FindActorsWithMatchingMissingScript(List<MissingScript> missingScripts)
-    {
-        foreach (Actor actor in Level.GetActors(typeof(Actor)))
-        {
-            for (int scriptIndex = 0; scriptIndex < actor.ScriptsCount; scriptIndex++)
-            {
-                Script actorScript = actor.Scripts[scriptIndex];
-                if (actorScript is not MissingScript missingActorScript)
-                    continue;
-
-                MissingScript currentMissing = Values[0] as MissingScript;
-                if (missingActorScript.MissingTypeName != currentMissing.MissingTypeName)
-                    continue;
-
-                missingScripts.Add(missingActorScript);
-            }
-        }
     }
 
     private void RunReplacementMultiCast(List<IUndoAction> actions)
@@ -113,16 +85,54 @@ public class MissingScriptEditor : GenericEditor
         }
     }
 
-    private void ReplaceScript(ScriptType script, bool replaceAllInScene)
+    private void GetMissingScripts(Actor actor, string currentMissingTypeName, List<MissingScript> missingScripts)
     {
-        var actions = new List<IUndoAction>(4);
+        // Iterate over the scripts of this actor
+        for (int i = 0; i < actor.ScriptsCount; i++)
+        {
+            if (actor.GetScript(i) is MissingScript otherMissing &&
+                otherMissing.MissingTypeName == currentMissingTypeName)
+            {
+                missingScripts.Add(otherMissing);
+            }
+        }
 
+        // Iterate over this actor children (recursive)
+        for (int i = 0; i < actor.ChildrenCount; i++)
+        {
+            GetMissingScripts(actor.GetChild(i), currentMissingTypeName, missingScripts);
+        }
+    }
+
+    private void ReplaceScript(ScriptType script)
+    {
         var missingScripts = new List<MissingScript>();
-        if (!replaceAllInScene)
-            missingScripts.Add((MissingScript)Values[0]);
+        var currentMissing = (MissingScript)Values[0];
+        var currentMissingTypeName = currentMissing.MissingTypeName;
+        if (_shouldReplaceAllCheckbox.Checked)
+        {
+            if (currentMissing.Scene == null && currentMissing.Actor != null)
+            {
+                // Find all missing scripts in prefab instance
+                GetMissingScripts(currentMissing.Actor.GetPrefabRoot(), currentMissingTypeName, missingScripts);
+            }
+            else
+            {
+                // Find all missing scripts in all loaded levels that match this type
+                for (int i = 0; i < Level.ScenesCount; i++)
+                {
+                    GetMissingScripts(Level.GetScene(i), currentMissingTypeName, missingScripts);
+                }
+            }
+        }
         else
-            FindActorsWithMatchingMissingScript(missingScripts);
+        {
+            // Use the current instance only
+            foreach (var value in Values)
+                missingScripts.Add((MissingScript)value);
+        }
 
+        var actions = new List<IUndoAction>(4);
         foreach (var missingScript in missingScripts)
             actions.Add(AddRemoveScript.Add(missingScript.Actor, script));
         RunReplacementMultiCast(actions);
@@ -158,7 +168,7 @@ public class MissingScriptEditor : GenericEditor
         var cm = new ItemsListContextMenu(180);
         for (int i = 0; i < scripts.Count; i++)
             cm.AddItem(new TypeSearchPopup.TypeItemView(scripts[i]));
-        cm.ItemClicked += item => ReplaceScript((ScriptType)item.Tag, _shouldReplaceAllCheckbox.Checked);
+        cm.ItemClicked += item => ReplaceScript((ScriptType)item.Tag);
         cm.SortItems();
         cm.Show(_dropPanel, _replaceScriptButton.BottomLeft - new Float2((cm.Width - _replaceScriptButton.Width) / 2, 0));
     }

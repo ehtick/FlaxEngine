@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using FlaxEngine;
 using FlaxEngine.GUI;
@@ -72,7 +72,7 @@ namespace FlaxEditor.GUI.Docking
             settings.Size = size;
             settings.Position = location;
             settings.MinimumSize = new Float2(1);
-            settings.MaximumSize = new Float2(4096);
+            settings.MaximumSize = Float2.Zero; // Unlimited size
             settings.Fullscreen = false;
             settings.HasBorder = true;
             settings.SupportsTransparency = false;
@@ -139,6 +139,8 @@ namespace FlaxEditor.GUI.Docking
         /// <inheritdoc />
         protected override void OnLastTabRemoved()
         {
+            if (ChildPanelsCount > 0)
+                return;
             // Close window
             _window?.Close();
         }

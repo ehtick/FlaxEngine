@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using FlaxEngine;
 using FlaxEngine.GUI;
@@ -90,7 +90,7 @@ namespace FlaxEditor.Windows.Profiler
                 if (_nameLength < bounds.Width + 4)
                 {
                     Render2D.PushClip(bounds);
-                    Render2D.DrawText(style.FontMedium, _name, bounds, Color.White, TextAlignment.Center, TextAlignment.Center);
+                    Render2D.DrawText(style.FontMedium, _name, bounds, Style.Current.Foreground, TextAlignment.Center, TextAlignment.Center);
                     Render2D.PopClip();
                 }
             }
@@ -115,7 +115,7 @@ namespace FlaxEditor.Windows.Profiler
                 var style = Style.Current;
                 var rect = new Rectangle(Float2.Zero, Size);
                 Render2D.PushClip(rect);
-                Render2D.DrawText(style.FontMedium, Name, rect, Color.White, TextAlignment.Center, TextAlignment.Center, TextWrapping.WrapChars);
+                Render2D.DrawText(style.FontMedium, Name, rect, Style.Current.Foreground, TextAlignment.Center, TextAlignment.Center, TextWrapping.WrapChars);
                 Render2D.PopClip();
             }
         }

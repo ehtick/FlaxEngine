@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -18,27 +18,44 @@ namespace FlaxEngine.Tools
         /// <summary>
         /// Brush radius (world-space).
         /// </summary>
+        [Limit(0)]
         public float BrushSize = 50.0f;
 
         /// <summary>
         /// Brush paint intensity.
         /// </summary>
+        [Limit(0)]
         public float BrushStrength = 2.0f;
 
         /// <summary>
         /// Brush paint falloff. Hardens or softens painting.
         /// </summary>
+        [Limit(0)]
         public float BrushFalloff = 1.5f;
 
         /// <summary>
         /// Value to paint with. Hold Ctrl hey to paint with inverse value (1 - value).
         /// </summary>
+        [Limit(0, 1, 0.01f)]
         public float PaintValue = 0.0f;
 
         /// <summary>
         /// Enables continuous painting, otherwise single paint on click.
         /// </summary>
         public bool ContinuousPaint;
+
+        /// <summary>
+        /// Enables drawing cloth paint debugging with Depth Test enabled (skips occluded vertices).
+        /// </summary>
+        public bool DebugDrawDepthTest
+        {
+            get => Gizmo.Cloth?.DebugDrawDepthTest ?? true;
+            set
+            {
+                if (Gizmo.Cloth != null)
+                    Gizmo.Cloth.DebugDrawDepthTest = value;
+            }
+        }
 #pragma warning restore CS0649
 
         public override void Init(IGizmoOwner owner)
@@ -58,6 +75,7 @@ namespace FlaxEngine.Tools
         public override void Dispose()
         {
             Owner.Gizmos.Remove(Gizmo);
+            Gizmo = null;
 
             base.Dispose();
         }
@@ -79,6 +97,7 @@ namespace FlaxEngine.Tools
         private EditClothPaintAction _undoAction;
 
         public bool IsPainting => _isPainting;
+        public Cloth Cloth => _cloth;
 
         public ClothPaintingGizmo(IGizmoOwner owner, ClothPaintingGizmoMode mode)
         : base(owner)
@@ -135,7 +154,7 @@ namespace FlaxEngine.Tools
             if (IsPainting)
                 return;
 
-            if (Editor.Instance.Undo.Enabled)
+            if (Owner.Undo.Enabled)
                 _undoAction = new EditClothPaintAction(_cloth);
             _isPainting = true;
             _paintUpdateCount = 0;
@@ -202,7 +221,7 @@ namespace FlaxEngine.Tools
             if (_undoAction != null)
             {
                 _undoAction.RecordEnd();
-                Editor.Instance.Undo.AddAction(_undoAction);
+                Owner.Undo.AddAction(_undoAction);
                 _undoAction = null;
             }
             _isPainting = false;
@@ -225,6 +244,7 @@ namespace FlaxEngine.Tools
             var cloth = _cloth;
             if (cloth == null)
                 return;
+            var hasPaintInput = Owner.IsLeftMouseButtonDown && !Owner.IsAltKeyDown;
 
             // Perform detailed tracing to find cursor location for the brush
             var ray = Owner.MouseRay;
@@ -240,7 +260,7 @@ namespace FlaxEngine.Tools
                 // Cursor hit other object or nothing
                 PaintEnd();
 
-                if (Owner.IsLeftMouseButtonDown)
+                if (hasPaintInput)
                 {
                     // Select something else
                     var view = new Ray(Owner.ViewPosition, Owner.ViewDirection);
@@ -253,7 +273,7 @@ namespace FlaxEngine.Tools
             }
 
             // Handle painting
-            if (Owner.IsLeftMouseButtonDown)
+            if (hasPaintInput)
                 PaintStart();
             else
                 PaintEnd();

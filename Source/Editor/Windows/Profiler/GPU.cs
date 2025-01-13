@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System.Collections.Generic;
 using FlaxEditor.GUI;
@@ -25,11 +25,40 @@ namespace FlaxEditor.Windows.Profiler
         : base("GPU")
         {
             // Layout
-            var panel = new Panel(ScrollBars.Vertical)
+            var mainPanel = new Panel(ScrollBars.None)
             {
                 AnchorPreset = AnchorPresets.StretchAll,
                 Offsets = Margin.Zero,
                 Parent = this,
+            };
+            
+            // Chart
+            _drawTimeCPU = new SingleChart
+            {
+                Title = "Draw (CPU)",
+                AnchorPreset = AnchorPresets.HorizontalStretchTop,
+                Offsets = Margin.Zero,
+                Height = SingleChart.DefaultHeight,
+                FormatSample = v => (Mathf.RoundToInt(v * 10.0f) / 10.0f) + " ms",
+                Parent = mainPanel,
+            };
+            _drawTimeCPU.SelectedSampleChanged += OnSelectedSampleChanged;
+            
+            _drawTimeGPU = new SingleChart
+            {
+                Title = "Draw (GPU)",
+                AnchorPreset = AnchorPresets.HorizontalStretchTop,
+                Offsets = new Margin(0, 0, _drawTimeCPU.Height + 2, 0),
+                FormatSample = v => (Mathf.RoundToInt(v * 10.0f) / 10.0f) + " ms",
+                Parent = mainPanel,
+            };
+            _drawTimeGPU.SelectedSampleChanged += OnSelectedSampleChanged;
+            
+            var panel = new Panel(ScrollBars.Vertical)
+            {
+                AnchorPreset = AnchorPresets.StretchAll,
+                Offsets = new Margin(0, 0, _drawTimeCPU.Height + _drawTimeGPU.Height + 4, 0),
+                Parent = mainPanel,
             };
             var layout = new VerticalPanel
             {
@@ -39,22 +68,6 @@ namespace FlaxEditor.Windows.Profiler
                 Parent = panel,
             };
 
-            // Chart
-            _drawTimeCPU = new SingleChart
-            {
-                Title = "Draw (CPU)",
-                FormatSample = v => (Mathf.RoundToInt(v * 10.0f) / 10.0f) + " ms",
-                Parent = layout,
-            };
-            _drawTimeCPU.SelectedSampleChanged += OnSelectedSampleChanged;
-            _drawTimeGPU = new SingleChart
-            {
-                Title = "Draw (GPU)",
-                FormatSample = v => (Mathf.RoundToInt(v * 10.0f) / 10.0f) + " ms",
-                Parent = layout,
-            };
-            _drawTimeGPU.SelectedSampleChanged += OnSelectedSampleChanged;
-
             // Timeline
             _timeline = new Timeline
             {
@@ -63,7 +76,9 @@ namespace FlaxEditor.Windows.Profiler
             };
 
             // Table
-            var headerColor = Style.Current.LightBackground;
+            var style = Style.Current;
+            var headerColor = style.LightBackground;
+            var textColor = style.Foreground;
             _table = new Table
             {
                 Columns = new[]
@@ -74,35 +89,41 @@ namespace FlaxEditor.Windows.Profiler
                         CellAlignment = TextAlignment.Near,
                         Title = "Event",
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                     },
                     new ColumnDefinition
                     {
                         Title = "Total",
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                         FormatValue = (x) => ((float)x).ToString("0.0") + '%',
                     },
                     new ColumnDefinition
                     {
                         Title = "GPU ms",
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                         FormatValue = (x) => ((float)x).ToString("0.000"),
                     },
                     new ColumnDefinition
                     {
                         Title = "Draw Calls",
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                         FormatValue = FormatCountLong,
                     },
                     new ColumnDefinition
                     {
                         Title = "Triangles",
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                         FormatValue = FormatCountLong,
                     },
                     new ColumnDefinition
                     {
                         Title = "Vertices",
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                         FormatValue = FormatCountLong,
                     },
                 },
@@ -313,8 +334,7 @@ namespace FlaxEditor.Windows.Profiler
             var data = _events.Get(_drawTimeCPU.SelectedSampleIndex);
             if (data == null || data.Length == 0)
                 return;
-
-            float totalTimeMs = _drawTimeCPU.SelectedSample;
+            float totalTimeMs = _drawTimeGPU.SelectedSample;
 
             // Add rows
             var rowColor2 = Style.Current.Background * 1.4f;
@@ -335,14 +355,19 @@ namespace FlaxEditor.Windows.Profiler
                     row = new Row
                     {
                         Values = new object[6],
+                        BackgroundColors = new Color[6],
                     };
+                    for (int k = 0; k < row.BackgroundColors.Length; k++)
+                        row.BackgroundColors[k] = Color.Transparent;
                 }
                 {
                     // Event
                     row.Values[0] = name;
 
                     // Total (%)
-                    row.Values[1] = (int)(e.Time / totalTimeMs * 1000.0f) / 10.0f;
+                    float rowTimePerc = (float)(e.Time / totalTimeMs);
+                    row.Values[1] = (int)(rowTimePerc * 1000.0f) / 10.0f;
+                    row.BackgroundColors[1] = Color.Red.AlphaMultiplied(Mathf.Min(1, rowTimePerc) * 0.5f);
 
                     // GPU ms
                     row.Values[2] = (e.Time * 10000.0f) / 10000.0f;

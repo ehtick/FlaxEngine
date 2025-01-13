@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -46,7 +46,7 @@ API_CLASS(Sealed, NoSpawn) class FLAXENGINE_API FoliageType : public ScriptingOb
     DECLARE_SCRIPTING_TYPE_NO_SPAWN(FoliageType);
     friend Foliage;
 private:
-    int8 _isReady : 1;
+    uint8 _isReady : 1;
 
 public:
     /// <summary>

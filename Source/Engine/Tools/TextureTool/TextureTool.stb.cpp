@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #if COMPILE_WITH_TEXTURE_TOOL && COMPILE_WITH_STB
 
@@ -9,8 +9,8 @@
 #include "Engine/Serialization/FileWriteStream.h"
 #include "Engine/Graphics/RenderTools.h"
 #include "Engine/Graphics/Textures/TextureData.h"
-#include "Engine/Graphics/Textures/TextureUtils.h"
 #include "Engine/Graphics/PixelFormatExtensions.h"
+#include "Engine/Utilities/AnsiPathTempFile.h"
 #include "Engine/Platform/File.h"
 
 #define STBI_ASSERT(x) ASSERT(x)
@@ -49,6 +49,18 @@
 // Compression libs for Editor
 #include <ThirdParty/detex/detex.h>
 #include <ThirdParty/bc7enc16/bc7enc16.h>
+
+// Import tinyexr library
+// Source: https://github.com/syoyo/tinyexr
+#define TINYEXR_IMPLEMENTATION
+#define TINYEXR_USE_MINIZ 1
+#define TINYEXR_USE_STB_ZLIB 0
+#define TINYEXR_USE_THREAD 0
+#define TINYEXR_USE_OPENMP 0
+#undef min
+#undef max
+#include <ThirdParty/tinyexr/tinyexr.h>
+
 #endif
 
 static void stbWrite(void* context, void* data, int size)
@@ -174,7 +186,7 @@ bool TextureTool::ExportTextureStb(ImageType type, const StringView& path, const
 {
     if (textureData.GetArraySize() != 1)
     {
-        LOG(Warning, "Exporting texture arrays and cubemaps is not supported by stb library.");
+        LOG(Warning, "Exporting texture arrays and cubemaps is not supported.");
     }
     TextureData const* texture = &textureData;
 
@@ -190,7 +202,7 @@ bool TextureTool::ExportTextureStb(ImageType type, const StringView& path, const
     const auto sampler = GetSampler(texture->Format);
     if (sampler == nullptr)
     {
-        LOG(Warning, "Texture data format {0} is not supported by stb library.", (int32)textureData.Format);
+        LOG(Warning, "Texture data format {0} is not supported.", (int32)textureData.Format);
         return true;
     }
     const auto srcData = texture->GetData(0, 0);
@@ -273,16 +285,19 @@ bool TextureTool::ExportTextureStb(ImageType type, const StringView& path, const
         break;
     }
     case ImageType::GIF:
-        LOG(Warning, "GIF format is not supported by stb library.");
+        LOG(Warning, "GIF format is not supported.");
         break;
     case ImageType::TIFF:
-        LOG(Warning, "GIF format is not supported by stb library.");
+        LOG(Warning, "GIF format is not supported.");
         break;
     case ImageType::DDS:
-        LOG(Warning, "DDS format is not supported by stb library.");
+        LOG(Warning, "DDS format is not supported.");
         break;
     case ImageType::RAW:
-        LOG(Warning, "RAW format is not supported by stb library.");
+        LOG(Warning, "RAW format is not supported.");
+        break;
+    case ImageType::EXR:
+        LOG(Warning, "EXR format is not supported.");
         break;
     default:
         LOG(Warning, "Unknown format.");
@@ -384,11 +399,49 @@ bool TextureTool::ImportTextureStb(ImageType type, const StringView& path, Textu
 
         break;
     }
+    case ImageType::EXR:
+    {
+#if USE_EDITOR
+        // Load exr file
+        AnsiPathTempFile tempFile(path);
+        float* pixels;
+        int width, height;
+        const char* err = nullptr;
+        int ret = LoadEXR(&pixels, &width, &height, tempFile.Path.Get(), &err);
+        if (ret != TINYEXR_SUCCESS)
+        {
+            if (err)
+            {
+                LOG_STR(Warning, String(err));
+                FreeEXRErrorMessage(err);
+            }
+            return true;
+        }
+        
+        // Setup texture data
+        textureData.Width = width;
+        textureData.Height = height;
+        textureData.Depth = 1;
+        textureData.Format = PixelFormat::R32G32B32A32_Float;
+        textureData.Items.Resize(1);
+        textureData.Items[0].Mips.Resize(1);
+        auto& mip = textureData.Items[0].Mips[0];
+        mip.RowPitch = width * sizeof(Float4);
+        mip.DepthPitch = mip.RowPitch * height;
+        mip.Lines = height;
+        mip.Data.Copy((const byte*)pixels, mip.DepthPitch);
+
+        free(pixels);
+#else
+        LOG(Warning, "EXR format is not supported.");
+#endif
+        break;
+    }
     case ImageType::DDS:
-        LOG(Warning, "DDS format is not supported by stb library.");
+        LOG(Warning, "DDS format is not supported.");
         break;
     case ImageType::TIFF:
-        LOG(Warning, "TIFF format is not supported by stb library.");
+        LOG(Warning, "TIFF format is not supported.");
         break;
     default:
         LOG(Warning, "Unknown format.");
@@ -405,7 +458,7 @@ bool TextureTool::ImportTextureStb(ImageType type, const StringView& path, Textu
     {
         if (!options.InternalLoad.IsBinded() || options.InternalLoad(textureData))
             return true;
-        if (options.FlipY)
+        if (options.FlipY || options.FlipX)
         {
             // TODO: impl this
             errorMsg = TEXT("Flipping images imported from Internal source is not supported by stb.");
@@ -436,7 +489,7 @@ bool TextureTool::ImportTextureStb(ImageType type, const StringView& path, Textu
     if (sourceWidth != width || sourceHeight != height)
     {
         // During resizing we need to keep texture aspect ratio
-        const bool keepAspectRatio = false; // TODO: expose as import option
+        const bool keepAspectRatio = options.KeepAspectRatio; // TODO: expose as import option
         if (keepAspectRatio)
         {
             const float aspectRatio = static_cast<float>(sourceWidth) / sourceHeight;
@@ -459,7 +512,7 @@ bool TextureTool::ImportTextureStb(ImageType type, const StringView& path, Textu
     // Cache data
     float alphaThreshold = 0.3f;
     bool isPowerOfTwo = Math::IsPowerOfTwo(width) && Math::IsPowerOfTwo(height);
-    PixelFormat targetFormat = TextureUtils::ToPixelFormat(options.Type, width, height, options.Compress);
+    PixelFormat targetFormat = ToPixelFormat(options.Type, width, height, options.Compress);
     if (options.sRGB)
         targetFormat = PixelFormatExtensions::TosRGB(targetFormat);
 
@@ -481,6 +534,22 @@ bool TextureTool::ImportTextureStb(ImageType type, const StringView& path, Textu
         // TODO: implement texture decompression
         errorMsg = String::Format(TEXT("Imported texture used compressed format {0}. Not supported for importing on this platform.."), (int32)textureDataSrc->Format);
         return true;
+    }
+
+    if (options.FlipX)
+    {
+        // TODO: impl this
+        LOG(Warning, "Option 'Flip X' is not supported");
+    }
+    if (options.InvertRedChannel || options.InvertGreenChannel || options.InvertBlueChannel || options.InvertAlphaChannel)
+    {
+        // TODO: impl this
+        LOG(Warning, "Option to invert channels is not supported");
+    }
+    if (options.ReconstructZChannel)
+    {
+        // TODO: impl this
+        LOG(Warning, "Option 'Reconstruct Z Channel' is not supported");
     }
 
     // Generate mip maps chain
@@ -562,7 +631,7 @@ bool TextureTool::ConvertStb(TextureData& dst, const TextureData& src, const Pix
     }
 
 #if USE_EDITOR
-    if (PixelFormatExtensions::IsCompressed(dstFormat))
+    if (PixelFormatExtensions::IsCompressedBC(dstFormat))
     {
         int32 bytesPerBlock;
         switch (dstFormat)
@@ -661,6 +730,17 @@ bool TextureTool::ConvertStb(TextureData& dst, const TextureData& src, const Pix
                     }
                 }
             }
+        }
+    }
+    else if (PixelFormatExtensions::IsCompressedASTC(dstFormat))
+    {
+#if COMPILE_WITH_ASTC
+        if (ConvertAstc(dst, *textureData, dstFormat))
+#else
+        LOG(Error, "Missing ASTC texture format compression lib.");
+#endif
+        {
+            return true;
         }
     }
     else

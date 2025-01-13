@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -86,6 +86,27 @@ namespace FlaxEditor.Surface
         }
 
         /// <summary>
+        /// Gets the amount of surface comments
+        /// </summary>
+        /// <remarks>
+        /// This is used as an alternative to <see cref="Comments"/>, if only the amount of comments is important.
+        /// Is faster and doesn't allocate as much memory
+        /// </remarks>
+        public int CommentCount
+        {
+            get
+            {
+                int count = 0;
+                for (int i = 0; i < RootControl.Children.Count; i++)
+                {
+                    if (RootControl.Children[i] is SurfaceComment)
+                        count++;
+                }
+                return count;
+            }
+        }
+
+        /// <summary>
         /// Gets a value indicating whether this context is modified (needs saving and flushing with surface data context source).
         /// </summary>
         public bool IsModified => _isModified;
@@ -134,6 +155,11 @@ namespace FlaxEditor.Surface
         /// Occurs when node gets removed from the surface as delete/cut operation (eg. remove comment or cut node).
         /// </summary>
         public event Action<SurfaceControl> ControlDeleted;
+
+        /// <summary>
+        /// Identifier of the node that 'owns' this context (eg. State Machine which created this graph of state nodes).
+        /// </summary>
+        public uint OwnerNodeID;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="VisjectSurfaceContext"/> class.
@@ -285,14 +311,16 @@ namespace FlaxEditor.Surface
         /// <param name="surfaceArea">The surface area to create comment.</param>
         /// <param name="title">The comment title.</param>
         /// <param name="color">The comment color.</param>
+        /// <param name="customOrder">The comment order or -1 to use default.</param>
         /// <returns>The comment object</returns>
-        public virtual SurfaceComment SpawnComment(ref Rectangle surfaceArea, string title, Color color)
+        public virtual SurfaceComment SpawnComment(ref Rectangle surfaceArea, string title, Color color, int customOrder = -1)
         {
             var values = new object[]
             {
                 title, // Title
                 color, // Color
                 surfaceArea.Size, // Size
+                customOrder, // Order
             };
             return (SurfaceComment)SpawnNode(7, 11, surfaceArea.Location, values);
         }
@@ -303,11 +331,12 @@ namespace FlaxEditor.Surface
         /// <param name="surfaceArea">The surface area to create comment.</param>
         /// <param name="title">The comment title.</param>
         /// <param name="color">The comment color.</param>
+        /// <param name="customOrder">The comment order or -1 to use default.</param>
         /// <returns>The comment object</returns>
-        public SurfaceComment CreateComment(ref Rectangle surfaceArea, string title, Color color)
+        public SurfaceComment CreateComment(ref Rectangle surfaceArea, string title, Color color, int customOrder = -1)
         {
             // Create comment
-            var comment = SpawnComment(ref surfaceArea, title, color);
+            var comment = SpawnComment(ref surfaceArea, title, color, customOrder);
             if (comment == null)
             {
                 Editor.LogWarning("Failed to create comment.");

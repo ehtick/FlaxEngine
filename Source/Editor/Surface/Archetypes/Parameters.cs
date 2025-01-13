@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #if USE_LARGE_WORLDS
 using Real = System.Double;
@@ -423,6 +423,12 @@ namespace FlaxEditor.Surface.Archetypes
                     _combobox.SelectedIndex = -1;
 
                 UpdateCombo();
+            }
+
+            /// <inheritdoc />
+            public bool IsParamUsed(SurfaceParameter param)
+            {
+                return (Guid)Values[0] == param.ID;
             }
 
             /// <inheritdoc />
@@ -937,11 +943,15 @@ namespace FlaxEditor.Surface.Archetypes
             {
                 // Deselect if that parameter is selected
                 if ((Guid)Values[0] == param.ID)
-                {
                     _combobox.SelectedIndex = -1;
-                }
 
                 UpdateCombo();
+            }
+
+            /// <inheritdoc />
+            public bool IsParamUsed(SurfaceParameter param)
+            {
+                return (Guid)Values[0] == param.ID;
             }
 
             /// <inheritdoc />
@@ -1084,7 +1094,7 @@ namespace FlaxEditor.Surface.Archetypes
                 },
                 Elements = new[]
                 {
-                    NodeElementArchetype.Factory.Input(0, string.Empty, true, typeof(void), 0),
+                    NodeElementArchetype.Factory.Input(0, string.Empty, false, typeof(void), 0),
                     NodeElementArchetype.Factory.Input(1, string.Empty, true, ScriptType.Null, 1, 1),
                     NodeElementArchetype.Factory.Output(0, string.Empty, typeof(void), 2, true),
                     NodeElementArchetype.Factory.ComboBox(2 + 20, 0, 116)

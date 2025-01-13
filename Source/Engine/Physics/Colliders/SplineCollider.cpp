@@ -1,11 +1,10 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "SplineCollider.h"
 #include "Engine/Core/Log.h"
 #include "Engine/Core/Math/Matrix.h"
 #include "Engine/Core/Math/Ray.h"
 #include "Engine/Level/Actors/Spline.h"
-#include "Engine/Serialization/Serialization.h"
 #include "Engine/Physics/Physics.h"
 #include "Engine/Physics/PhysicsBackend.h"
 #include "Engine/Physics/PhysicsScene.h"
@@ -124,26 +123,6 @@ bool SplineCollider::IntersectsItself(const Ray& ray, Real& distance, Vector3& n
     return _box.Intersects(ray, distance, normal);
 }
 
-void SplineCollider::Serialize(SerializeStream& stream, const void* otherObj)
-{
-    // Base
-    Collider::Serialize(stream, otherObj);
-
-    SERIALIZE_GET_OTHER_OBJ(SplineCollider);
-
-    SERIALIZE(CollisionData);
-    SERIALIZE_MEMBER(PreTransform, _preTransform)
-}
-
-void SplineCollider::Deserialize(DeserializeStream& stream, ISerializeModifier* modifier)
-{
-    // Base
-    Collider::Deserialize(stream, modifier);
-
-    DESERIALIZE(CollisionData);
-    DESERIALIZE_MEMBER(PreTransform, _preTransform);
-}
-
 void SplineCollider::OnParentChanged()
 {
     if (_spline)
@@ -235,9 +214,9 @@ void SplineCollider::GetGeometry(CollisionShape& collision)
         auto offsetIndices = segment * collisionIndices.Count();
         const auto& start = keyframes[segment];
         const auto& end = keyframes[segment + 1];
-        const float length = end.Time - start.Time;
-        AnimationUtils::GetTangent(start.Value, start.TangentOut, length, leftTangent);
-        AnimationUtils::GetTangent(end.Value, end.TangentIn, length, rightTangent);
+        const float tangentScale = (end.Time - start.Time) / 3.0f;
+        AnimationUtils::GetTangent(start.Value, start.TangentOut, tangentScale, leftTangent);
+        AnimationUtils::GetTangent(end.Value, end.TangentIn, tangentScale, rightTangent);
 
         // Vertex buffer is deformed along the spline
         auto srcVertices = collisionVertices.Get();

@@ -1,10 +1,11 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "ObjectsRemovalService.h"
 #include "Utilities.h"
 #include "Collections/Dictionary.h"
 #include "Engine/Engine/Time.h"
 #include "Engine/Engine/EngineService.h"
+#include "Engine/Platform/CriticalSection.h"
 #include "Engine/Profiler/ProfilerCPU.h"
 #include "Engine/Scripting/ScriptingObject.h"
 
@@ -16,7 +17,7 @@ Span<const Char*> Utilities::Private::HertzSizes(HertzSizesData, ARRAY_COUNT(Her
 namespace
 {
     CriticalSection PoolLocker;
-    DateTime LastUpdate;
+    double LastUpdate;
     float LastUpdateGameTime;
     Dictionary<Object*, float> Pool(8192);
     uint64 PoolCounter = 0;
@@ -113,7 +114,7 @@ void ObjectsRemovalService::Flush(float dt, float gameDelta)
 
 bool ObjectsRemoval::Init()
 {
-    LastUpdate = DateTime::NowUTC();
+    LastUpdate = Platform::GetTimeSeconds();
     LastUpdateGameTime = 0;
     return false;
 }
@@ -123,8 +124,8 @@ void ObjectsRemoval::LateUpdate()
     PROFILE_CPU();
 
     // Delete all objects
-    const auto now = DateTime::NowUTC();
-    const float dt = (now - LastUpdate).GetTotalSeconds();
+    const double now = Platform::GetTimeSeconds();
+    const float dt = (float)(now - LastUpdate);
     float gameDelta = Time::Update.DeltaTime.GetTotalSeconds();
     if (Time::GetGamePaused())
         gameDelta = 0;

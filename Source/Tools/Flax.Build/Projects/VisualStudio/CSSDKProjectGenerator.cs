@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Text;
@@ -28,6 +28,7 @@ namespace Flax.Build.Projects.VisualStudio
         /// <inheritdoc />
         public override void GenerateProject(Project project, string solutionPath)
         {
+            var dotnetSdk = DotNetSdk.Instance;
             var csProjectFileContent = new StringBuilder();
 
             var vsProject = (VisualStudioProject)project;
@@ -73,8 +74,8 @@ namespace Flax.Build.Projects.VisualStudio
             csProjectFileContent.AppendLine(string.Format("    <Platforms>{0}</Platforms>", string.Join(";", allPlatforms)));
 
             // Provide default platform and configuration
-            csProjectFileContent.AppendLine(string.Format("    <Configuration Condition=\" '$(Configuration)' == '' \">{0}</Configuration>", defaultConfiguration.Text));
-            csProjectFileContent.AppendLine(string.Format("    <Platform Condition=\" '$(Platform)' == '' \">{0}</Platform>", defaultConfiguration.ArchitectureName));
+            csProjectFileContent.AppendLine(string.Format("    <Configuration>{0}</Configuration>", defaultConfiguration.Text));
+            csProjectFileContent.AppendLine(string.Format("    <Platform>{0}</Platform>", defaultConfiguration.ArchitectureName));
 
             switch (project.OutputType ?? defaultTarget.OutputType)
             {
@@ -91,7 +92,7 @@ namespace Flax.Build.Projects.VisualStudio
             var baseOutputDir = Utilities.MakePathRelativeTo(project.CSharp.OutputPath ?? baseConfiguration.TargetBuildOptions.OutputFolder, projectDirectory);
             var baseIntermediateOutputPath = Utilities.MakePathRelativeTo(project.CSharp.IntermediateOutputPath ?? Path.Combine(baseConfiguration.TargetBuildOptions.IntermediateFolder, "CSharp"), projectDirectory);
 
-            csProjectFileContent.AppendLine("    <TargetFramework>net7.0</TargetFramework>");
+            csProjectFileContent.AppendLine($"    <TargetFramework>net{dotnetSdk.Version.Major}.{dotnetSdk.Version.Minor}</TargetFramework>");
             csProjectFileContent.AppendLine("    <ImplicitUsings>disable</ImplicitUsings>");
             csProjectFileContent.AppendLine(string.Format("    <Nullable>{0}</Nullable>", baseConfiguration.TargetBuildOptions.ScriptingAPI.CSharpNullableReferences.ToString().ToLowerInvariant()));
             csProjectFileContent.AppendLine("    <IsPackable>false</IsPackable>");
@@ -103,17 +104,21 @@ namespace Flax.Build.Projects.VisualStudio
             csProjectFileContent.AppendLine("    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>");
             csProjectFileContent.AppendLine(string.Format("    <RootNamespace>{0}</RootNamespace>", project.BaseName));
             csProjectFileContent.AppendLine(string.Format("    <AssemblyName>{0}.CSharp</AssemblyName>", project.BaseName));
-            csProjectFileContent.AppendLine("    <LangVersion>11.0</LangVersion>");
+            csProjectFileContent.AppendLine($"    <LangVersion>{dotnetSdk.CSharpLanguageVersion}</LangVersion>");
             csProjectFileContent.AppendLine("    <FileAlignment>512</FileAlignment>");
 
-            // Needed for Hostfxr
-            csProjectFileContent.AppendLine("    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>");
-            csProjectFileContent.AppendLine("    <EnableDynamicLoading>true</EnableDynamicLoading>");
             //csProjectFileContent.AppendLine("    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>"); // TODO: use it to reduce burden of framework libs
 
-            // This needs to be set here to fix errors in VS
-            csProjectFileContent.AppendLine(string.Format("    <OutDir>{0}</OutDir>", baseOutputDir));
-            csProjectFileContent.AppendLine(string.Format("    <IntermediateOutputPath>{0}</IntermediateOutputPath>", baseIntermediateOutputPath));
+            // Custom .targets file for overriding MSBuild build tasks, only invoke Flax.Build once per Flax project
+            bool isMainProject = Globals.Project.IsCSharpOnlyProject && Globals.Project.ProjectFolderPath == project.WorkspaceRootPath && project.Name != "BuildScripts" && (Globals.Project.Name != "Flax" || project.Name != "FlaxEngine");
+            var flaxBuildTargetsFilename = isMainProject ? "Flax.Build.CSharp.targets" : "Flax.Build.CSharp.SkipBuild.targets";
+            var cacheProjectsPath = Utilities.MakePathRelativeTo(Path.Combine(Globals.Root, "Cache", "Projects"), projectDirectory);
+            var flaxBuildTargetsPath = !string.IsNullOrEmpty(cacheProjectsPath) ? Path.Combine(cacheProjectsPath, flaxBuildTargetsFilename) : flaxBuildTargetsFilename;
+            csProjectFileContent.AppendLine(string.Format("    <CustomAfterMicrosoftCommonTargets>$(MSBuildThisFileDirectory){0}</CustomAfterMicrosoftCommonTargets>", flaxBuildTargetsPath));
+
+            // Hide annoying warnings during build
+            csProjectFileContent.AppendLine("    <RestorePackages>false</RestorePackages>");
+            csProjectFileContent.AppendLine("    <DisableFastUpToDateCheck>True</DisableFastUpToDateCheck>");
 
             csProjectFileContent.AppendLine("  </PropertyGroup>");
             csProjectFileContent.AppendLine("");
@@ -157,7 +162,6 @@ namespace Flax.Build.Projects.VisualStudio
             csProjectFileContent.AppendLine("");
 
             // Files and folders
-
             csProjectFileContent.AppendLine("  <ItemGroup>");
 
             var files = new List<string>();
@@ -209,23 +213,40 @@ namespace Flax.Build.Projects.VisualStudio
                 else
                     csProjectFileContent.AppendLine(string.Format("    <{0} Include=\"{1}\" />", fileType, projectPath));
             }
+            csProjectFileContent.AppendLine("  </ItemGroup>");
 
             if (project.GeneratedSourceFiles != null)
             {
-                foreach (var file in project.GeneratedSourceFiles)
+                foreach (var group in project.GeneratedSourceFiles.GroupBy(x => GetGroupingFromPath(x), y => y))
                 {
-                    string fileType;
-                    if (file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
-                        fileType = "Compile";
-                    else
-                        fileType = "None";
+                    (string targetName, string platform, string arch, string configuration) = group.Key;
 
-                    var filePath = file.Replace('/', '\\');
-                    csProjectFileContent.AppendLine(string.Format("    <{0} Visible=\"false\" Include=\"{1}\" />", fileType, filePath));
+                    var targetConfiguration = project.Targets.First(x => x.Name == targetName).ConfigurationName;
+                    csProjectFileContent.AppendLine($"  <ItemGroup Condition=\" '$(Configuration)|$(Platform)' == '{targetConfiguration}.{platform}.{configuration}|{arch}' \" >");
+
+                    foreach (var file in group)
+                    {
+                        string fileType;
+                        if (file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+                            fileType = "Compile";
+                        else
+                            fileType = "None";
+
+                        var filePath = file.Replace('/', '\\');
+                        csProjectFileContent.AppendLine(string.Format("    <{0} Visible=\"false\" Include=\"{1}\" />", fileType, filePath));
+                    }
+
+                    csProjectFileContent.AppendLine("  </ItemGroup>");
+                }
+
+                (string target, string platform, string arch, string configuration) GetGroupingFromPath(string path)
+                {
+                    ReadOnlySpan<char> span = path.AsSpan();
+                    Span<Range> split = stackalloc Range[path.Count((c) => c == '/' || c == '\\')];
+                    var _ = MemoryExtensions.SplitAny(path, split, [ '/', '\\' ]);
+                    return (span[split[^5]].ToString(), span[split[^4]].ToString(), span[split[^3]].ToString(), span[split[^2]].ToString());
                 }
             }
-
-            csProjectFileContent.AppendLine("  </ItemGroup>");
 
             // End
 
@@ -263,6 +284,13 @@ namespace Flax.Build.Projects.VisualStudio
             csProjectFileContent.AppendLine("    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>");
             if (configuration.TargetBuildOptions.ScriptingAPI.IgnoreMissingDocumentationWarnings)
                 csProjectFileContent.AppendLine("    <NoWarn>1591</NoWarn>");
+            if (configuration.TargetBuildOptions.ScriptingAPI.IgnoreSpecificWarnings.Any())
+            {
+                foreach (var warningString in configuration.TargetBuildOptions.ScriptingAPI.IgnoreSpecificWarnings)
+                {
+                    csProjectFileContent.AppendLine($"    <NoWarn>{warningString}</NoWarn>");
+                }
+            }
             csProjectFileContent.AppendLine(string.Format("    <DocumentationFile>{0}\\{1}.CSharp.xml</DocumentationFile>", outputPath, project.BaseName));
             csProjectFileContent.AppendLine("    <UseVSHostingProcess>true</UseVSHostingProcess>");
 

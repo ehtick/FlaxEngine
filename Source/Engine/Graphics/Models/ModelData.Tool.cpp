@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #if COMPILE_WITH_MODEL_TOOL
 
@@ -10,16 +10,17 @@
 #include "Engine/Core/Collections/BitArray.h"
 #include "Engine/Tools/ModelTool/ModelTool.h"
 #include "Engine/Tools/ModelTool/VertexTriangleAdjacency.h"
+#include "Engine/Profiler/ProfilerCPU.h"
 #include "Engine/Platform/Platform.h"
 #define USE_MIKKTSPACE 1
 #include "ThirdParty/MikkTSpace/mikktspace.h"
 #if USE_ASSIMP
-#define USE_SPARIAL_SORT 1
+#define USE_SPATIAL_SORT 1
 #define ASSIMP_BUILD_NO_EXPORT
 #include "Engine/Tools/ModelTool/SpatialSort.h"
 //#include <ThirdParty/assimp/SpatialSort.h>
 #else
-#define USE_SPARIAL_SORT 0
+#define USE_SPATIAL_SORT 0
 #endif
 #include <stack>
 
@@ -78,6 +79,7 @@ void RemapArrayHelper(Array<T>& target, const std::vector<uint32_t>& remap)
 
 bool MeshData::GenerateLightmapUVs()
 {
+    PROFILE_CPU();
 #if PLATFORM_WINDOWS
     // Prepare
     HRESULT hr;
@@ -153,18 +155,18 @@ bool MeshData::GenerateLightmapUVs()
 }
 
 int32 FindVertex(const MeshData& mesh, int32 vertexIndex, int32 startIndex, int32 searchRange, const Array<int32>& mapping
-#if USE_SPARIAL_SORT
+#if USE_SPATIAL_SORT
                  , const Assimp::SpatialSort& spatialSort
-                 , std::vector<unsigned int>& sparialSortCache
+                 , std::vector<unsigned int>& spatialSortCache
 #endif
 )
 {
     const float uvEpsSqr = (1.0f / 250.0f) * (1.0f / 250.0f);
 
-#if USE_SPARIAL_SORT
+#if USE_SPATIAL_SORT
     const Float3 vPosition = mesh.Positions[vertexIndex];
-    spatialSort.FindPositions(*(aiVector3D*)&vPosition, 1e-4f, sparialSortCache);
-    if (sparialSortCache.empty())
+    spatialSort.FindPositions(*(aiVector3D*)&vPosition, 1e-5f, spatialSortCache);
+    if (spatialSortCache.empty())
         return INVALID_INDEX;
 
     const Float2 vUV = mesh.UVs.HasItems() ? mesh.UVs[vertexIndex] : Float2::Zero;
@@ -175,9 +177,9 @@ int32 FindVertex(const MeshData& mesh, int32 vertexIndex, int32 startIndex, int3
 
     const int32 end = startIndex + searchRange;
 
-    for (size_t i = 0; i < sparialSortCache.size(); i++)
+    for (size_t i = 0; i < spatialSortCache.size(); i++)
     {
-        const int32 v = sparialSortCache[i];
+        const int32 v = spatialSortCache[i];
         if (v < startIndex || v >= end)
             continue;
 #else
@@ -235,6 +237,7 @@ void RemapBuffer(Array<T>& src, Array<T>& dst, const Array<int32>& mapping, int3
 
 void MeshData::BuildIndexBuffer()
 {
+    PROFILE_CPU();
     const auto startTime = Platform::GetTimeSeconds();
 
     const int32 vertexCount = Positions.Count();
@@ -244,11 +247,11 @@ void MeshData::BuildIndexBuffer()
     mapping.Resize(vertexCount);
     int32 newVertexCounter = 0;
 
-#if USE_SPARIAL_SORT
+#if USE_SPATIAL_SORT
     // Set up a SpatialSort to quickly find all vertices close to a given position
     Assimp::SpatialSort vertexFinder;
     vertexFinder.Fill((const aiVector3D*)Positions.Get(), vertexCount, sizeof(Float3));
-    std::vector<unsigned int> sparialSortCache;
+    std::vector<unsigned int> spatialSortCache;
 #endif
 
     // Build index buffer
@@ -256,8 +259,8 @@ void MeshData::BuildIndexBuffer()
     {
         // Find duplicated vertex before the current one
         const int32 reuseVertexIndex = FindVertex(*this, vertexIndex, 0, vertexIndex, mapping
-#if USE_SPARIAL_SORT
-                                                  , vertexFinder, sparialSortCache
+#if USE_SPATIAL_SORT
+                                                  , vertexFinder, spatialSortCache
 #endif
         );
         if (reuseVertexIndex == INVALID_INDEX)
@@ -301,18 +304,15 @@ void MeshData::BuildIndexBuffer()
 
         dstBlendShape.Name = srcBlendShape.Name;
         dstBlendShape.Weight = srcBlendShape.Weight;
-        dstBlendShape.Vertices.Resize(newVertexCounter);
-        for (int32 i = 0, j = 0; i < srcBlendShape.Vertices.Count(); i++)
+        dstBlendShape.Vertices.EnsureCapacity(srcBlendShape.Vertices.Count());
+        for (int32 i = 0; i < srcBlendShape.Vertices.Count(); i++)
         {
-            const auto idx = mapping[i];
-            if (idx != INVALID_INDEX)
+            auto& v = srcBlendShape.Vertices[i];
+            int32 newVertexIndex = v.VertexIndex < (uint32)vertexCount ? mapping[v.VertexIndex] : INVALID_INDEX;
+            if (newVertexIndex != INVALID_INDEX)
             {
-                auto& v = srcBlendShape.Vertices[i];
-                ASSERT_LOW_LAYER(v.VertexIndex < (uint32)vertexCount);
-                ASSERT_LOW_LAYER(mapping[v.VertexIndex] != INVALID_INDEX);
-                v.VertexIndex = mapping[v.VertexIndex];
-                ASSERT_LOW_LAYER(v.VertexIndex < (uint32)newVertexCounter);
-                dstBlendShape.Vertices[j++] = v;
+                v.VertexIndex = newVertexIndex;
+                dstBlendShape.Vertices.Add(v);
             }
         }
     }
@@ -341,6 +341,7 @@ bool MeshData::GenerateNormals(float smoothingAngle)
         LOG(Warning, "Missing vertex or index data to generate normals.");
         return true;
     }
+    PROFILE_CPU();
 
     const auto startTime = Platform::GetTimeSeconds();
 
@@ -372,7 +373,7 @@ bool MeshData::GenerateNormals(float smoothingAngle)
         Float3::Max(max, v3, max);
     }
 
-#if USE_SPARIAL_SORT
+#if USE_SPATIAL_SORT
     // Set up a SpatialSort to quickly find all vertices close to a given position
     Assimp::SpatialSort vertexFinder;
     vertexFinder.Fill((const aiVector3D*)Positions.Get(), vertexCount, sizeof(Float3));
@@ -395,7 +396,7 @@ bool MeshData::GenerateNormals(float smoothingAngle)
                 continue;
 
             // Get all vertices that share this one
-#if USE_SPARIAL_SORT
+#if USE_SPATIAL_SORT
             vertexFinder.FindPositions(*(aiVector3D*)&Positions[i], posEpsilon, verticesFound);
             const int32 verticesFoundCount = (int32)verticesFound.size();
 #else
@@ -425,7 +426,7 @@ bool MeshData::GenerateNormals(float smoothingAngle)
         for (int32 i = 0; i < vertexCount; i++)
         {
             // Get all vertices that share this one
-#if USE_SPARIAL_SORT
+#if USE_SPATIAL_SORT
             vertexFinder.FindPositions(*(aiVector3D*)&Positions[i], posEpsilon, verticesFound);
             const int32 verticesFoundCount = (int32)verticesFound.size();
 #else
@@ -520,6 +521,7 @@ bool MeshData::GenerateTangents(float smoothingAngle)
         LOG(Warning, "Missing normals or texcoors data to generate tangents.");
         return true;
     }
+    PROFILE_CPU();
 
     const auto startTime = Platform::GetTimeSeconds();
     const int32 vertexCount = Positions.Count();
@@ -618,7 +620,7 @@ bool MeshData::GenerateTangents(float smoothingAngle)
         }
     }
 
-#if USE_SPARIAL_SORT
+#if USE_SPATIAL_SORT
     // Set up a SpatialSort to quickly find all vertices close to a given position
     Assimp::SpatialSort vertexFinder;
     vertexFinder.Fill((const aiVector3D*)Positions.Get(), vertexCount, sizeof(Float3));
@@ -643,7 +645,7 @@ bool MeshData::GenerateTangents(float smoothingAngle)
         closeVertices.Clear();
 
         // Find all vertices close to that position
-#if USE_SPARIAL_SORT
+#if USE_SPATIAL_SORT
         vertexFinder.FindPositions(*(aiVector3D*)&origPos, posEpsilon, verticesFound);
         const int32 verticesFoundCount = (int32)verticesFound.size();
 #else
@@ -706,6 +708,7 @@ void MeshData::ImproveCacheLocality()
 
     if (Positions.IsEmpty() || Indices.IsEmpty() || Positions.Count() <= VertexCacheSize)
         return;
+    PROFILE_CPU();
 
     const auto startTime = Platform::GetTimeSeconds();
 
@@ -886,6 +889,7 @@ void MeshData::ImproveCacheLocality()
 
 float MeshData::CalculateTrianglesArea() const
 {
+    PROFILE_CPU();
     float sum = 0;
     // TODO: use SIMD
     for (int32 i = 0; i + 2 < Indices.Count(); i += 3)

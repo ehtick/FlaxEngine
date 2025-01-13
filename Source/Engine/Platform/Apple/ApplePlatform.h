@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -45,21 +45,21 @@ public:
     {
         return __sync_fetch_and_add(dst, value);
     }
-    FORCE_INLINE static int32 AtomicRead(int32 volatile* dst)
+    FORCE_INLINE static int32 AtomicRead(int32 const volatile* dst)
     {
         return __atomic_load_n(dst, __ATOMIC_RELAXED);
     }
-    FORCE_INLINE static int64 AtomicRead(int64 volatile* dst)
+    FORCE_INLINE static int64 AtomicRead(int64 const volatile* dst)
     {
         return __atomic_load_n(dst, __ATOMIC_RELAXED);
     }
     FORCE_INLINE static void AtomicStore(int32 volatile* dst, int32 value)
     {
-        __atomic_store(dst, &value, __ATOMIC_SEQ_CST);
+        __atomic_store_n((volatile int32*)dst, value, __ATOMIC_RELAXED);
     }
     FORCE_INLINE static void AtomicStore(int64 volatile* dst, int64 value)
     {
-        __atomic_store(dst, &value, __ATOMIC_SEQ_CST);
+        __atomic_store_n((volatile int64*)dst, value, __ATOMIC_RELAXED);
     }
     FORCE_INLINE static void Prefetch(void const* ptr)
     {
@@ -79,7 +79,10 @@ public:
     static uint64 GetClockFrequency();
     static void GetSystemTime(int32& year, int32& month, int32& dayOfWeek, int32& day, int32& hour, int32& minute, int32& second, int32& millisecond);
     static void GetUTCTime(int32& year, int32& month, int32& dayOfWeek, int32& day, int32& hour, int32& minute, int32& second, int32& millisecond);
+#if !BUILD_RELEASE
     static void Log(const StringView& msg);
+    static bool IsDebuggerPresent();
+#endif
     static bool Init();
     static void Tick();
     static void BeforeExit();

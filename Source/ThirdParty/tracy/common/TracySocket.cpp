@@ -353,7 +353,7 @@ int Socket::Recv( void* _buf, int len, int timeout )
     }
 }
 
-int Socket::ReadUpTo( void* _buf, int len, int timeout )
+int Socket::ReadUpTo( void* _buf, int len )
 {
     const auto sock = m_sock.load( std::memory_order_relaxed );
     auto buf = (char*)_buf;
@@ -450,6 +450,9 @@ ListenSocket::~ListenSocket()
 
 static int addrinfo_and_socket_for_family( uint16_t port, int ai_family, struct addrinfo** res )
 {
+#if PLATFORM_SWITCH
+    Platform::GetNetworkConnectionType(); // Ensure to have network service initialized before using sockets
+#endif
     struct addrinfo hints;
     memset( &hints, 0, sizeof( hints ) );
     hints.ai_family = ai_family;
@@ -678,10 +681,10 @@ bool UdpListen::Listen( uint16_t port )
 #endif
 #if defined _WIN32
     unsigned long reuse = 1;
-    setsockopt( m_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof( reuse ) );
+    setsockopt( sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof( reuse ) );
 #else
     int reuse = 1;
-    setsockopt( m_sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof( reuse ) );
+    setsockopt( sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof( reuse ) );
 #endif
 #if defined _WIN32
     unsigned long broadcast = 1;

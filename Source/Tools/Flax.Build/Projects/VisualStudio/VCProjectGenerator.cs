@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using Flax.Build.NativeCpp;
 using System;
@@ -172,15 +172,17 @@ namespace Flax.Build.Projects.VisualStudio
                                             configuration.Configuration,
                                             configuration.Platform,
                                             target.Name);
-                if (!string.IsNullOrEmpty(Configuration.Compiler))
-                    cmdLine += " -compiler=" + Configuration.Compiler;
+                Configuration.PassArgs(ref cmdLine);
 
                 vcProjectFileContent.AppendLine(string.Format("  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='{0}'\">", configuration.Name));
                 if (platform is IVisualStudioProjectCustomizer customizer)
                     customizer.WriteVisualStudioBuildProperties(vsProject, platform, toolchain, configuration, vcProjectFileContent, vcFiltersFileContent, vcUserFileContent);
                 vcProjectFileContent.AppendLine(string.Format("    <IntDir>{0}</IntDir>", targetBuildOptions.IntermediateFolder));
                 vcProjectFileContent.AppendLine(string.Format("    <OutDir>{0}</OutDir>", targetBuildOptions.OutputFolder));
-                vcProjectFileContent.AppendLine("    <IncludePath />");
+                if (includePaths.Count != 0)
+                    vcProjectFileContent.AppendLine(string.Format("    <IncludePath>$(IncludePath);{0}</IncludePath>", string.Join(";", includePaths)));
+                else
+                    vcProjectFileContent.AppendLine("    <IncludePath />");
                 vcProjectFileContent.AppendLine("    <ReferencePath />");
                 vcProjectFileContent.AppendLine("    <LibraryPath />");
                 vcProjectFileContent.AppendLine("    <LibraryWPath />");
@@ -196,6 +198,26 @@ namespace Flax.Build.Projects.VisualStudio
 
                 if (includePaths.Count != 0)
                     vcProjectFileContent.AppendLine(string.Format("    <NMakeIncludeSearchPath>$(NMakeIncludeSearchPath);{0}</NMakeIncludeSearchPath>", string.Join(";", includePaths)));
+
+                var additionalOptions = new List<string>();
+                additionalOptions.Add("$(AdditionalOptions)");
+                switch (configuration.TargetBuildOptions.CompileEnv.CppVersion)
+                {
+                    case CppVersion.Cpp14:
+                        additionalOptions.Add("/std:c++14");
+                        break;
+                    case CppVersion.Cpp17:
+                        additionalOptions.Add("/std:c++17");
+                        break;
+                    case CppVersion.Cpp20:
+                        additionalOptions.Add("/std:c++20");
+                        break;
+                    case CppVersion.Latest:
+                        additionalOptions.Add("/std:c++latest");
+                        break;
+                }
+
+                vcProjectFileContent.AppendLine(string.Format("    <AdditionalOptions>{0}</AdditionalOptions>", string.Join(" ", additionalOptions)));
 
                 vcProjectFileContent.AppendLine("  </PropertyGroup>");
             }
@@ -324,33 +346,17 @@ namespace Flax.Build.Projects.VisualStudio
             vcProjectFileContent.AppendLine("  </ItemGroup>");
             vcFiltersFileContent.AppendLine("  </ItemGroup>");
 
-            // IntelliSense information
-
-            var additionalOptions = new List<string>();
-            switch (project.Configurations[0].TargetBuildOptions.CompileEnv.CppVersion)
             {
-            case CppVersion.Cpp14:
-                additionalOptions.Add("/std:c++14");
-                break;
-            case CppVersion.Cpp17:
-                additionalOptions.Add("/std:c++17");
-                break;
-            case CppVersion.Cpp20:
-                additionalOptions.Add("/std:c++20");
-                break;
-            case CppVersion.Latest:
-                additionalOptions.Add("/std:c++latest");
-                break;
+                // IntelliSense information
+                vcProjectFileContent.AppendLine("  <PropertyGroup>");
+                vcProjectFileContent.AppendLine(string.Format("    <NMakePreprocessorDefinitions>$(NMakePreprocessorDefinitions){0}</NMakePreprocessorDefinitions>", (project.Defines.Count > 0 ? (";" + string.Join(";", project.Defines)) : "")));
+                vcProjectFileContent.AppendLine(string.Format("    <NMakeIncludeSearchPath>$(NMakeIncludeSearchPath){0}</NMakeIncludeSearchPath>", (project.SearchPaths.Length > 0 ? (";" + string.Join(";", project.SearchPaths)) : "")));
+                vcProjectFileContent.AppendLine("    <NMakeForcedIncludes>$(NMakeForcedIncludes)</NMakeForcedIncludes>");
+                vcProjectFileContent.AppendLine("    <NMakeAssemblySearchPath>$(NMakeAssemblySearchPath)</NMakeAssemblySearchPath>");
+                vcProjectFileContent.AppendLine("    <NMakeForcedUsingAssemblies>$(NMakeForcedUsingAssemblies)</NMakeForcedUsingAssemblies>");
+                vcProjectFileContent.AppendLine("    <AdditionalOptions>$(AdditionalOptions)</AdditionalOptions>");
+                vcProjectFileContent.AppendLine("  </PropertyGroup>");
             }
-
-            vcProjectFileContent.AppendLine("  <PropertyGroup>");
-            vcProjectFileContent.AppendLine(string.Format("    <NMakePreprocessorDefinitions>$(NMakePreprocessorDefinitions){0}</NMakePreprocessorDefinitions>", (project.Defines.Count > 0 ? (";" + string.Join(";", project.Defines)) : "")));
-            vcProjectFileContent.AppendLine(string.Format("    <NMakeIncludeSearchPath>$(NMakeIncludeSearchPath){0}</NMakeIncludeSearchPath>", (project.SearchPaths.Length > 0 ? (";" + string.Join(";", project.SearchPaths)) : "")));
-            vcProjectFileContent.AppendLine("    <NMakeForcedIncludes>$(NMakeForcedIncludes)</NMakeForcedIncludes>");
-            vcProjectFileContent.AppendLine("    <NMakeAssemblySearchPath>$(NMakeAssemblySearchPath)</NMakeAssemblySearchPath>");
-            vcProjectFileContent.AppendLine("    <NMakeForcedUsingAssemblies>$(NMakeForcedUsingAssemblies)</NMakeForcedUsingAssemblies>");
-            vcProjectFileContent.AppendLine(string.Format("    <AdditionalOptions>{0}</AdditionalOptions>", string.Join(" ", additionalOptions)));
-            vcProjectFileContent.AppendLine("  </PropertyGroup>");
 
             foreach (var platform in platforms)
             {

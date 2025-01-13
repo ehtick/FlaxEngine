@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -42,9 +42,14 @@ public:
     Dictionary<Guid, const ISerializable::DeserializeStream*> ObjectsDataCache;
 
     /// <summary>
+    /// The object hierarchy cache that maps the PrefabObjectID into the list of children (identified also by PrefabObjectID). Objects without any children are not included for sake of optimization. Used for quick validation of the structure of loaded prefab instances. Valid only if asset is loaded.
+    /// </summary>
+    Dictionary<Guid, Array<Guid>> ObjectsHierarchyCache;
+
+    /// <summary>
     /// The objects cache maps the id of the object contained in the prefab asset (actor or script) to the default instance deserialized from prefab data. Valid only if asset is loaded and GetDefaultInstance was called.
     /// </summary>
-    Dictionary<Guid, const void*> ObjectsCache;
+    Dictionary<Guid, SceneObject*> ObjectsCache;
 
 public:
     /// <summary>

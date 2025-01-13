@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using FlaxEngine;
@@ -12,6 +12,7 @@ namespace FlaxEditor.Windows.Profiler
     /// <seealso cref="FlaxEngine.GUI.Control" />
     internal class SingleChart : Control
     {
+        internal const float DefaultHeight = TitleHeight + 60;
         private const float TitleHeight = 20;
         private const float PointsOffset = 4;
         private readonly SamplesBuffer<float> _samples;
@@ -63,7 +64,7 @@ namespace FlaxEditor.Windows.Profiler
         /// </summary>
         /// <param name="maxSamples">The maximum samples to collect.</param>
         public SingleChart(int maxSamples = ProfilerMode.MaxSamples)
-        : base(0, 0, 100, 60 + TitleHeight)
+        : base(0, 0, 100, DefaultHeight)
         {
             _samples = new SamplesBuffer<float>(maxSamples);
             _sample = string.Empty;
@@ -105,7 +106,7 @@ namespace FlaxEditor.Windows.Profiler
                 if (_selectedSampleIndex != -1)
                 {
                     float selectedX = Width - (_samples.Count - _selectedSampleIndex - 1) * PointsOffset;
-                    Render2D.DrawLine(new Float2(selectedX, 0), new Float2(selectedX, chartHeight), Color.White, 1.5f);
+                    Render2D.DrawLine(new Float2(selectedX, 0), new Float2(selectedX, chartHeight), style.Foreground, 1.5f);
                 }
 
                 int samplesInViewCount = Math.Min((int)(Width / PointsOffset), _samples.Count) - 1;
@@ -138,8 +139,8 @@ namespace FlaxEditor.Windows.Profiler
             var headerRect = new Rectangle(0, chartHeight, Width, TitleHeight);
             var headerTextRect = new Rectangle(2, chartHeight, Width - 4, TitleHeight);
             Render2D.FillRectangle(headerRect, style.BackgroundNormal);
-            Render2D.DrawText(style.FontMedium, Title, headerTextRect, Color.White * 0.8f, TextAlignment.Near, TextAlignment.Center);
-            Render2D.DrawText(style.FontMedium, _sample, headerTextRect, Color.White, TextAlignment.Far, TextAlignment.Center);
+            Render2D.DrawText(style.FontMedium, Title, headerTextRect, style.ForegroundGrey, TextAlignment.Near, TextAlignment.Center);
+            Render2D.DrawText(style.FontMedium, _sample, headerTextRect, style.Foreground, TextAlignment.Far, TextAlignment.Center);
         }
 
         private void OnClick(ref Float2 location)

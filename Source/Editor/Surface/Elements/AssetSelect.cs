@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using FlaxEditor.GUI;
@@ -38,13 +38,13 @@ namespace FlaxEditor.Surface.Elements
 
         private void OnNodeValuesChanged()
         {
-            SelectedID = (Guid)ParentNode.Values[Archetype.ValueIndex];
+            Validator.SelectedID = (Guid)ParentNode.Values[Archetype.ValueIndex];
         }
 
         /// <inheritdoc />
         protected override void OnSelectedItemChanged()
         {
-            var selectedId = SelectedID;
+            var selectedId = Validator.SelectedID;
             if (ParentNode != null && (Guid)ParentNode.Values[Archetype.ValueIndex] != selectedId)
             {
                 ParentNode.SetValue(Archetype.ValueIndex, selectedId);

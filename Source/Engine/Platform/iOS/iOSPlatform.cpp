@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #if PLATFORM_IOS
 
@@ -410,7 +410,7 @@ bool iOSWindow::IsClosed() const
 
 bool iOSWindow::IsForegroundWindow() const
 {
-    return Platform::GetHasFocus() && IsFocused();
+    return IsFocused() && Platform::GetHasFocus();
 }
 
 void iOSWindow::BringToFront(bool force)

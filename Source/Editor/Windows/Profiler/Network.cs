@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -146,11 +146,10 @@ namespace FlaxEditor.Windows.Profiler
                 avgStats.TotalDataSent += e.TotalDataSent;
                 avgStats.TotalDataReceived += e.TotalDataReceived;
             }
-            avgStats.TotalDataSent /= (uint)_stats.Count;
-            avgStats.TotalDataReceived /= (uint)_stats.Count;
+            //avgStats.TotalDataSent /= (uint)_stats.Count;
+            //avgStats.TotalDataReceived /= (uint)_stats.Count;
             _dataSentRateChart.AddSample(avgStats.TotalDataSent);
             _dataReceivedRateChart.AddSample(avgStats.TotalDataReceived);
-
 
             // Gather network events
             var events = ProfilingTools.EventsNetwork;
@@ -252,7 +251,9 @@ namespace FlaxEditor.Windows.Profiler
 
         private static Table InitTable(ContainerControl parent, string name)
         {
-            var headerColor = Style.Current.LightBackground;
+            var style = Style.Current;
+            var headerColor = style.LightBackground;
+            var textColor = style.Foreground;
             var table = new Table
             {
                 Columns = new[]
@@ -263,28 +264,33 @@ namespace FlaxEditor.Windows.Profiler
                         CellAlignment = TextAlignment.Near,
                         Title = name,
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                     },
                     new ColumnDefinition
                     {
                         Title = "Count",
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                     },
                     new ColumnDefinition
                     {
                         Title = "Data Size",
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                         FormatValue = FormatCellBytes,
                     },
                     new ColumnDefinition
                     {
                         Title = "Message Size",
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                         FormatValue = FormatCellBytes,
                     },
                     new ColumnDefinition
                     {
                         Title = "Receivers",
                         TitleBackgroundColor = headerColor,
+                        TitleColor = textColor,
                     },
                 },
                 Splits = new[]
@@ -312,7 +318,7 @@ namespace FlaxEditor.Windows.Profiler
 
         private static string FormatCellBytes(object x)
         {
-            return Utilities.Utils.FormatBytesCount((int)x);
+            return Utilities.Utils.FormatBytesCount((ulong)(int)x);
         }
 
         private static int SortRows(Control x, Control y)

@@ -1,8 +1,9 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
 #include "SerializationFwd.h"
+#include "ISerializeModifier.h"
 #include "Engine/Core/Collections/Array.h"
 #include "Engine/Core/Collections/Dictionary.h"
 #include "Engine/Scripting/ScriptingObject.h"
@@ -392,7 +393,7 @@ namespace Serialization
     FLAXENGINE_API bool ShouldSerialize(const Transform& v, const void* otherObj);
     inline void Serialize(ISerializable::SerializeStream& stream, const Transform& v, const void* otherObj)
     {
-        stream.Transform(v);
+        stream.Transform(v, (const Transform*)otherObj);
     }
     FLAXENGINE_API void Deserialize(ISerializable::DeserializeStream& stream, Transform& v, ISerializeModifier* modifier);
 

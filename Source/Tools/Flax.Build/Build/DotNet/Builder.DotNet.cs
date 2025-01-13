@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -164,7 +164,7 @@ namespace Flax.Build
 #if USE_NETCORE
             var dotnetSdk = DotNetSdk.Instance;
             if (!dotnetSdk.IsValid)
-                throw new Exception("Cannot compile C# without .NET SDK");
+                throw new DotNetSdk.MissingException();
             string dotnetPath = "dotnet", referenceAnalyzers;
             string[] runtimeVersionNameParts = dotnetSdk.RuntimeVersionName.Split('.');
             string runtimeVersionShort = runtimeVersionNameParts[0] + '.' + runtimeVersionNameParts[1];
@@ -247,7 +247,7 @@ namespace Flax.Build
             args.Add("/fullpaths");
             args.Add("/filealign:512");
 #if USE_NETCORE
-            args.Add("/langversion:11.0");
+            args.Add($"/langversion:{dotnetSdk.CSharpLanguageVersion}");
             args.Add(string.Format("/nullable:{0}", buildOptions.ScriptingAPI.CSharpNullableReferences.ToString().ToLowerInvariant()));
             if (buildOptions.ScriptingAPI.CSharpNullableReferences == CSharpNullableReferences.Disable)
                 args.Add("-nowarn:8632"); // The annotation for nullable reference types should only be used in code within a '#nullable' annotations context.
@@ -256,6 +256,13 @@ namespace Flax.Build
 #endif
             if (buildOptions.ScriptingAPI.IgnoreMissingDocumentationWarnings)
                 args.Add("-nowarn:1591");
+            if (buildOptions.ScriptingAPI.IgnoreSpecificWarnings.Any())
+            {
+                foreach (var warningString in buildOptions.ScriptingAPI.IgnoreSpecificWarnings)
+                {
+                    args.Add($"-nowarn:{warningString}");
+                }
+            }
 
             // Optimizations prevent debugging, only enable in release builds by default
             var optimize = optimizeAssembly.HasValue ? optimizeAssembly.Value : buildData.Configuration == TargetConfiguration.Release;

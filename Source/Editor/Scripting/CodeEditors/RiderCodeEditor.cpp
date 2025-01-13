@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "RiderCodeEditor.h"
 #include "Engine/Platform/FileSystem.h"
@@ -207,9 +207,9 @@ void RiderCodeEditor::FindEditors(Array<CodeEditor*>* output)
     FileSystem::GetChildDirectories(subDirectories, TEXT("/opt/"));
     
     // Versions installed via JetBrains Toolbox
-    SearchDirectory(&installations, localAppDataPath / TEXT(".local/share/JetBrains/Toolbox/apps/rider/"));
-    FileSystem::GetChildDirectories(subDirectories, localAppDataPath / TEXT(".local/share/JetBrains/Toolbox/apps/Rider/ch-0"));
-    FileSystem::GetChildDirectories(subDirectories, localAppDataPath / TEXT(".local/share/JetBrains/Toolbox/apps/Rider/ch-1")); // Beta versions
+    SearchDirectory(&installations, localAppDataPath / TEXT("JetBrains/Toolbox/apps/rider/"));
+    FileSystem::GetChildDirectories(subDirectories, localAppDataPath / TEXT("JetBrains/Toolbox/apps/Rider/ch-0"));
+    FileSystem::GetChildDirectories(subDirectories, localAppDataPath / TEXT("JetBrains/Toolbox/apps/Rider/ch-1")); // Beta versions
 
     // Detect Flatpak installations
     SearchDirectory(&installations,

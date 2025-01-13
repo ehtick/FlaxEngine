@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "../WindowsManager.h"
 #include "Engine/Engine/Time.h"
@@ -59,9 +59,11 @@ void WindowsManagerService::Update()
     // Update windows
     const float deltaTime = Time::Update.UnscaledDeltaTime.GetTotalSeconds();
     WindowsManager::WindowsLocker.Lock();
-    for (Window* win : WindowsManager::Windows)
+    Array<Window*, InlinedAllocation<32>> windows;
+    windows.Add(WindowsManager::Windows);
+    for (Window* win : windows)
     {
-        if (win && win->IsVisible())
+        if (win->IsVisible())
             win->OnUpdate(deltaTime);
     }
     WindowsManager::WindowsLocker.Unlock();
@@ -71,7 +73,8 @@ void WindowsManagerService::Dispose()
 {
     // Close remaining windows
     WindowsManager::WindowsLocker.Lock();
-    auto windows = WindowsManager::Windows;
+    Array<Window*, InlinedAllocation<32>> windows;
+    windows.Add(WindowsManager::Windows);
     for (Window* win : windows)
     {
         win->Close(ClosingReason::EngineExit);

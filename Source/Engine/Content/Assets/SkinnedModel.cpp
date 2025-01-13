@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "SkinnedModel.h"
 #include "Animation.h"
@@ -23,7 +23,6 @@
 #define CHECK_INVALID_BUFFER(model, buffer) \
     if (buffer->IsValidFor(model) == false) \
 	{ \
-		LOG(Warning, "Invalid Skinned Model Instance Buffer size {0} for Skinned Model {1}. It should be {2}. Manual update to proper size.", buffer->Count(), model->ToString(), model->MaterialSlots.Count()); \
 		buffer->Setup(model); \
 	}
 
@@ -969,20 +968,19 @@ void SkinnedModel::InitAsVirtual()
 
 void SkinnedModel::CancelStreaming()
 {
+    Asset::CancelStreaming();
     CancelStreamingTasks();
 }
 
 #if USE_EDITOR
 
-void SkinnedModel::GetReferences(Array<Guid>& output) const
+void SkinnedModel::GetReferences(Array<Guid>& assets, Array<String>& files) const
 {
     // Base
-    BinaryAsset::GetReferences(output);
+    BinaryAsset::GetReferences(assets, files);
 
     for (int32 i = 0; i < MaterialSlots.Count(); i++)
-    {
-        output.Add(MaterialSlots[i].Material.GetID());
-    }
+        assets.Add(MaterialSlots[i].Material.GetID());
 }
 
 #endif

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using FlaxEditor.GUI;
@@ -290,7 +290,7 @@ namespace FlaxEditor.Tools.Terrain
 
             var patchCoord = Gizmo.SelectedPatchCoord;
             var chunkCoord = Gizmo.SelectedChunkCoord;
-            var action = new EditChunkMaterialAction(CarveTab.SelectedTerrain, ref patchCoord, ref chunkCoord, _chunkOverrideMaterial.SelectedAsset as MaterialBase);
+            var action = new EditChunkMaterialAction(CarveTab.SelectedTerrain, ref patchCoord, ref chunkCoord, _chunkOverrideMaterial.Validator.SelectedAsset as MaterialBase);
             action.Do();
             CarveTab.Editor.Undo.AddAction(action);
         }
@@ -336,12 +336,12 @@ namespace FlaxEditor.Tools.Terrain
                     _isUpdatingUI = true;
                     if (terrain.HasPatch(ref patchCoord))
                     {
-                        _chunkOverrideMaterial.SelectedAsset = terrain.GetChunkOverrideMaterial(ref patchCoord, ref chunkCoord);
+                        _chunkOverrideMaterial.Validator.SelectedAsset = terrain.GetChunkOverrideMaterial(ref patchCoord, ref chunkCoord);
                         _chunkOverrideMaterial.Enabled = true;
                     }
                     else
                     {
-                        _chunkOverrideMaterial.SelectedAsset = null;
+                        _chunkOverrideMaterial.Validator.SelectedAsset = null;
                         _chunkOverrideMaterial.Enabled = false;
                     }
                     _isUpdatingUI = false;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using FlaxEngine;
 using FlaxEngine.GUI;
@@ -18,11 +18,6 @@ namespace FlaxEditor.GUI.ContextMenu
         public readonly ContextMenu ContextMenu = new ContextMenu();
 
         /// <summary>
-        /// The amount to adjust the arrow image by in x coordinates.
-        /// </summary>
-        public float AdjustArrowAmount = 0;
-
-        /// <summary>
         /// Initializes a new instance of the <see cref="ContextMenuChildMenu"/> class.
         /// </summary>
         /// <param name="parent">The parent context menu.</param>
@@ -32,6 +27,15 @@ namespace FlaxEditor.GUI.ContextMenu
         {
             Text = text;
             CloseMenuOnClick = false;
+        }
+
+        private void ShowChild(ContextMenu parentContextMenu)
+        {
+            // Hide parent CM popups and set itself as child
+            var vAlign = parentContextMenu.ItemsAreaMargin.Top;
+            var location = new Float2(Width, -vAlign);
+            location = PointToParent(parentContextMenu, location);
+            parentContextMenu.ShowChild(ContextMenu, location);
         }
 
         /// <inheritdoc />
@@ -49,7 +53,7 @@ namespace FlaxEditor.GUI.ContextMenu
 
             // Draw arrow
             if (ContextMenu.HasChildren)
-                Render2D.DrawSprite(style.ArrowRight, new Rectangle(Width - 15 + AdjustArrowAmount, (Height - 12) / 2, 12, 12), Enabled ? isCMopened ? style.BackgroundSelected : style.Foreground : style.ForegroundDisabled);
+                Render2D.DrawSprite(style.ArrowRight, new Rectangle(Width - 15 + ExtraAdjustmentAmount, (Height - 12) / 2, 12, 12), Enabled ? isCMopened ? style.BackgroundSelected : style.Foreground : style.ForegroundDisabled);
         }
 
         /// <inheritdoc />
@@ -63,14 +67,12 @@ namespace FlaxEditor.GUI.ContextMenu
             var parentContextMenu = ParentContextMenu;
             if (parentContextMenu == ContextMenu)
                 return;
-
             if (ContextMenu.IsOpened)
                 return;
 
             base.OnMouseEnter(location);
 
-            // Hide parent CM popups and set itself as child
-            parentContextMenu.ShowChild(ContextMenu, PointToParent(ParentContextMenu, new Float2(Width, 0)));
+            ShowChild(parentContextMenu);
         }
 
         /// <inheritdoc />
@@ -83,8 +85,7 @@ namespace FlaxEditor.GUI.ContextMenu
             if (ContextMenu.IsOpened)
                 return true;
 
-            // Hide parent CM popups and set itself as child
-            parentContextMenu.ShowChild(ContextMenu, PointToParent(ParentContextMenu, new Float2(Width, 0)));
+            ShowChild(parentContextMenu);
             return base.OnMouseUp(location, button);
         }
     }

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #if FLAX_EDITOR
 using System;
@@ -13,9 +13,7 @@ namespace FlaxEngine.TypeConverters
         public override bool CanConvertFrom(ITypeDescriptorContext context, Type sourceType)
         {
             if (sourceType == typeof(string))
-            {
                 return true;
-            }
             return base.CanConvertFrom(context, sourceType);
         }
 
@@ -23,9 +21,7 @@ namespace FlaxEngine.TypeConverters
         public override bool CanConvertTo(ITypeDescriptorContext context, Type destinationType)
         {
             if (destinationType == typeof(string))
-            {
                 return false;
-            }
             return base.CanConvertTo(context, destinationType);
         }
 

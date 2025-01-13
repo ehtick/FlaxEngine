@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -201,8 +201,8 @@ namespace FlaxEditor.Options
         /// <returns>True if input has been processed, otherwise false.</returns>
         public bool Process(Control control)
         {
-            var root = control.Root;
-            return root.GetKey(Key) && ProcessModifiers(control);
+            var root = control?.Root;
+            return root != null && root.GetKey(Key) && ProcessModifiers(control);
         }
 
         /// <summary>
@@ -259,10 +259,7 @@ namespace FlaxEditor.Options
         public override bool CanConvertFrom(ITypeDescriptorContext context, Type sourceType)
         {
             if (sourceType == typeof(string))
-            {
                 return true;
-            }
-
             return base.CanConvertFrom(context, sourceType);
         }
 
@@ -270,9 +267,7 @@ namespace FlaxEditor.Options
         public override bool CanConvertTo(ITypeDescriptorContext context, Type destinationType)
         {
             if (destinationType == typeof(string))
-            {
                 return false;
-            }
             return base.CanConvertTo(context, destinationType);
         }
 
@@ -284,7 +279,6 @@ namespace FlaxEditor.Options
                 InputBinding.TryParse(str, out var result);
                 return result;
             }
-
             return base.ConvertFrom(context, culture, value);
         }
 
@@ -295,7 +289,6 @@ namespace FlaxEditor.Options
             {
                 return ((InputBinding)value).ToString();
             }
-
             return base.ConvertTo(context, culture, value, destinationType);
         }
     }

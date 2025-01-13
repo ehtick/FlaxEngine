@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -561,6 +561,7 @@ namespace FlaxEditor.Windows.Assets
         : base(editor, item)
         {
             var isPlayMode = Editor.IsPlayMode;
+            var inputOptions = Editor.Options.Options.Input;
 
             // Undo
             _undo = new Undo();
@@ -596,23 +597,17 @@ namespace FlaxEditor.Windows.Assets
             _propertiesEditor.Select(_properties);
 
             // Toolstrip
-            _saveButton = (ToolStripButton)_toolstrip.AddButton(Editor.Icons.Save64, Save).LinkTooltip("Save");
-            _toolstrip.AddSeparator();
-            _undoButton = (ToolStripButton)_toolstrip.AddButton(Editor.Icons.Undo64, _undo.PerformUndo).LinkTooltip("Undo (Ctrl+Z)");
-            _redoButton = (ToolStripButton)_toolstrip.AddButton(Editor.Icons.Redo64, _undo.PerformRedo).LinkTooltip("Redo (Ctrl+Y)");
-            _toolstrip.AddSeparator();
-            _toolstrip.AddButton(Editor.Icons.Search64, Editor.ContentFinding.ShowSearch).LinkTooltip("Open content search tool (Ctrl+F)");
-            _toolstrip.AddButton(editor.Icons.CenterView64, ShowWholeGraph).LinkTooltip("Show whole graph");
+            SurfaceUtils.PerformCommonSetup(this, _toolstrip, _surface, out _saveButton, out _undoButton, out _redoButton);
             _toolstrip.AddSeparator();
             _toolstrip.AddButton(editor.Icons.Docs64, () => Platform.OpenUrl(Utilities.Constants.DocsUrl + "manual/scripting/visual/index.html")).LinkTooltip("See documentation to learn more");
             _debugToolstripControls = new[]
             {
                 _toolstrip.AddSeparator(),
-                _toolstrip.AddButton(editor.Icons.Play64, OnDebuggerContinue).LinkTooltip("Continue (F5)"),
+                _toolstrip.AddButton(editor.Icons.Play64, OnDebuggerContinue).LinkTooltip("Continue", ref inputOptions.DebuggerContinue),
                 _toolstrip.AddButton(editor.Icons.Search64, OnDebuggerNavigateToCurrentNode).LinkTooltip("Navigate to the current stack trace node"),
-                _toolstrip.AddButton(editor.Icons.Right64, OnDebuggerStepOver).LinkTooltip("Step Over (F10)"),
-                _toolstrip.AddButton(editor.Icons.Down64, OnDebuggerStepInto).LinkTooltip("Step Into (F11)"),
-                _toolstrip.AddButton(editor.Icons.Up64, OnDebuggerStepOut).LinkTooltip("Step Out (Shift+F11)"),
+                _toolstrip.AddButton(editor.Icons.Right64, OnDebuggerStepOver).LinkTooltip("Step Over", ref inputOptions.DebuggerStepOver),
+                _toolstrip.AddButton(editor.Icons.Down64, OnDebuggerStepInto).LinkTooltip("Step Into", ref inputOptions.DebuggerStepInto),
+                _toolstrip.AddButton(editor.Icons.Up64, OnDebuggerStepOut).LinkTooltip("Step Out", ref inputOptions.DebuggerStepOut),
                 _toolstrip.AddButton(editor.Icons.Stop64, OnDebuggerStop).LinkTooltip("Stop debugging"),
             };
             foreach (var control in _debugToolstripControls)
@@ -642,9 +637,6 @@ namespace FlaxEditor.Windows.Assets
             debugObjectPickerContainer.Parent = _toolstrip;
 
             // Setup input actions
-            InputActions.Add(options => options.Undo, _undo.PerformUndo);
-            InputActions.Add(options => options.Redo, _undo.PerformRedo);
-            InputActions.Add(options => options.Search, Editor.ContentFinding.ShowSearch);
             InputActions.Add(options => options.DebuggerContinue, OnDebuggerContinue);
             InputActions.Add(options => options.DebuggerStepOver, OnDebuggerStepOver);
             InputActions.Add(options => options.DebuggerStepOut, OnDebuggerStepOut);
@@ -796,11 +788,12 @@ namespace FlaxEditor.Windows.Assets
             }
 
             // Check if any breakpoint was hit
-            for (int i = 0; i < Surface.Breakpoints.Count; i++)
+            var breakpoints = Surface.Breakpoints;
+            for (int i = 0; i < breakpoints.Count; i++)
             {
-                if (Surface.Breakpoints[i].ID == flowInfo.NodeId)
+                if (breakpoints[i].ID == flowInfo.NodeId)
                 {
-                    OnDebugBreakpointHit(ref flowInfo, Surface.Breakpoints[i]);
+                    OnDebugBreakpointHit(ref flowInfo, breakpoints[i]);
                     break;
                 }
             }
@@ -819,7 +812,7 @@ namespace FlaxEditor.Windows.Assets
             var state = (BreakpointHangState)Editor.Instance.Simulation.BreakpointHangTag;
             if (state.Locals == null)
             {
-                state.Locals = Editor.Internal_GetVisualScriptLocals(out var _);
+                state.Locals = Editor.GetVisualScriptLocals();
                 Editor.Instance.Simulation.BreakpointHangTag = state;
             }
             return state;
@@ -830,7 +823,7 @@ namespace FlaxEditor.Windows.Assets
             var state = (BreakpointHangState)Editor.Instance.Simulation.BreakpointHangTag;
             if (state.StackFrames == null)
             {
-                state.StackFrames = Editor.Internal_GetVisualScriptStackFrames(out var _);
+                state.StackFrames = Editor.GetVisualScriptStackFrames();
                 Editor.Instance.Simulation.BreakpointHangTag = state;
             }
             return state;
@@ -975,7 +968,7 @@ namespace FlaxEditor.Windows.Assets
                 return;
 
             // Break on any of the output connects from the previous scope node
-            var frame = Editor.Internal_GetVisualScriptPreviousScopeFrame();
+            var frame = Editor.GetVisualScriptPreviousScopeFrame();
             if (frame.Script != null)
             {
                 if (_debugStepOutNodesIds == null)
@@ -1025,7 +1018,7 @@ namespace FlaxEditor.Windows.Assets
             try
             {
                 // Try to restore the cached breakpoints from the last session
-                if (Editor.ProjectCache.TryGetCustomData(_asset.ScriptTypeName + ".Breakpoints", out var breakpointsData))
+                if (Editor.ProjectCache.TryGetCustomData(_asset.ScriptTypeName + ".Breakpoints", out string breakpointsData))
                 {
                     var data = JsonSerializer.Deserialize<BreakpointData[]>(breakpointsData);
                     if (data != null)
@@ -1200,7 +1193,8 @@ namespace FlaxEditor.Windows.Assets
 
         private bool SaveSurface()
         {
-            _surface.Save();
+            if (_surface.Save())
+                return true;
 
             // Reselect actors to prevent issues after Visual Script properties were modified
             Editor.Windows.PropertiesWin.Presenter.BuildLayoutOnUpdate();

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "PrefabManager.h"
 #include "../Scene/Scene.h"
@@ -14,6 +14,7 @@
 #include "Engine/Core/Collections/CollectionPoolCache.h"
 #include "Engine/Profiler/ProfilerCPU.h"
 #include "Engine/Core/Cache.h"
+#include "Engine/Core/LogContext.h"
 #include "Engine/Debug/Exceptions/ArgumentException.h"
 #include "Engine/Engine/EngineService.h"
 #include "Engine/Scripting/Script.h"
@@ -39,7 +40,7 @@ PrefabManagerService PrefabManagerServiceInstance;
 Actor* PrefabManager::SpawnPrefab(Prefab* prefab)
 {
     Actor* parent = Level::Scenes.Count() != 0 ? Level::Scenes.Get()[0] : nullptr;
-    return SpawnPrefab(prefab, Transform::Identity, parent, nullptr);
+    return SpawnPrefab(prefab, Transform(Vector3::Minimum), parent, nullptr);
 }
 
 Actor* PrefabManager::SpawnPrefab(Prefab* prefab, const Vector3& position)
@@ -73,15 +74,15 @@ Actor* PrefabManager::SpawnPrefab(Prefab* prefab, Actor* parent, const Transform
 
 Actor* PrefabManager::SpawnPrefab(Prefab* prefab, Actor* parent)
 {
-    return SpawnPrefab(prefab, Transform::Identity, parent, nullptr);
+    return SpawnPrefab(prefab, Transform(Vector3::Minimum), parent, nullptr);
 }
 
-Actor* PrefabManager::SpawnPrefab(Prefab* prefab, Actor* parent, Dictionary<Guid, const void*>* objectsCache, bool withSynchronization)
+Actor* PrefabManager::SpawnPrefab(Prefab* prefab, Actor* parent, Dictionary<Guid, SceneObject*>* objectsCache, bool withSynchronization)
 {
-    return SpawnPrefab(prefab, Transform::Identity, parent, objectsCache, withSynchronization);
+    return SpawnPrefab(prefab, Transform(Vector3::Minimum), parent, objectsCache, withSynchronization);
 }
 
-Actor* PrefabManager::SpawnPrefab(Prefab* prefab, const Transform& transform, Actor* parent, Dictionary<Guid, const void*>* objectsCache, bool withSynchronization)
+Actor* PrefabManager::SpawnPrefab(Prefab* prefab, const Transform& transform, Actor* parent, Dictionary<Guid, SceneObject*>* objectsCache, bool withSynchronization)
 {
     PROFILE_CPU_NAMED("Prefab.Spawn");
     if (prefab == nullptr)
@@ -94,8 +95,8 @@ Actor* PrefabManager::SpawnPrefab(Prefab* prefab, const Transform& transform, Ac
         LOG(Warning, "Waiting for prefab asset be loaded failed. {0}", prefab->ToString());
         return nullptr;
     }
-    const int32 objectsCount = prefab->ObjectsCount;
-    if (objectsCount == 0)
+    const int32 dataCount = prefab->ObjectsCount;
+    if (dataCount == 0)
     {
         LOG(Warning, "Prefab has no objects. {0}", prefab->ToString());
         return nullptr;
@@ -107,7 +108,7 @@ Actor* PrefabManager::SpawnPrefab(Prefab* prefab, const Transform& transform, Ac
 
     // Prepare
     CollectionPoolCache<ActorsCache::SceneObjectsListType>::ScopeCache sceneObjects = ActorsCache::SceneObjectsListCache.Get();
-    sceneObjects->Resize(objectsCount);
+    sceneObjects->Resize(dataCount);
     CollectionPoolCache<ISerializeModifier, Cache::ISerializeModifierClearCallback>::ScopeCache modifier = Cache::ISerializeModifier.Get();
     modifier->EngineBuild = prefab->DataEngineBuild;
     modifier->IdsMapping.EnsureCapacity(prefab->ObjectsIds.Count() * 4);
@@ -122,11 +123,12 @@ Actor* PrefabManager::SpawnPrefab(Prefab* prefab, const Transform& transform, Ac
     }
     auto& data = *prefab->Data;
     SceneObjectsFactory::Context context(modifier.Value);
+    LogContextScope logContext(prefabId);
 
     // Deserialize prefab objects
     auto prevIdMapping = Scripting::ObjectsLookupIdMapping.Get();
     Scripting::ObjectsLookupIdMapping.Set(&modifier.Value->IdsMapping);
-    for (int32 i = 0; i < objectsCount; i++)
+    for (int32 i = 0; i < dataCount; i++)
     {
         auto& stream = data[i];
         SceneObject* obj = SceneObjectsFactory::Spawn(context, stream);
@@ -145,7 +147,7 @@ Actor* PrefabManager::SpawnPrefab(Prefab* prefab, const Transform& transform, Ac
         SceneObjectsFactory::SynchronizeNewPrefabInstances(context, prefabSyncData);
         Scripting::ObjectsLookupIdMapping.Set(&modifier.Value->IdsMapping);
     }
-    for (int32 i = 0; i < objectsCount; i++)
+    for (int32 i = 0; i < dataCount; i++)
     {
         auto& stream = data[i];
         SceneObject* obj = sceneObjects->At(i);
@@ -154,33 +156,35 @@ Actor* PrefabManager::SpawnPrefab(Prefab* prefab, const Transform& transform, Ac
     }
     Scripting::ObjectsLookupIdMapping.Set(prevIdMapping);
 
-    // Pick prefab root object
-    if (sceneObjects->IsEmpty())
-    {
-        LOG(Warning, "No valid objects in prefab.");
-        return nullptr;
-    }
-    Actor* root = nullptr;
-    const Guid prefabRootObjectId = prefab->GetRootObjectId();
-    for (int32 i = 0; i < objectsCount; i++)
-    {
-        if (JsonTools::GetGuid(data[i], "ID") == prefabRootObjectId)
-        {
-            root = dynamic_cast<Actor*>(sceneObjects->At(i));
-            break;
-        }
-    }
-    if (!root)
-    {
-        LOG(Warning, "Missing prefab root object.");
-        return nullptr;
-    }
-
     // Synchronize prefab instances (prefab may have new objects added or some removed so deserialized instances need to synchronize with it)
     if (withSynchronization)
     {
         // TODO: resave and force sync scenes during game cooking so this step could be skipped in game
         SceneObjectsFactory::SynchronizePrefabInstances(context, prefabSyncData);
+    }
+
+    // Pick prefab root object
+    Actor* root = nullptr;
+    const Guid prefabRootObjectId = prefab->GetRootObjectId();
+    for (int32 i = 0; i < dataCount && !root; i++)
+    {
+        if (JsonTools::GetGuid(data[i], "ID") == prefabRootObjectId)
+            root = dynamic_cast<Actor*>(sceneObjects->At(i));
+    }
+    if (!root)
+    {
+        // Fallback to the first actor that has no parent
+        for (int32 i = 0; i < sceneObjects->Count() && !root; i++)
+        {
+            SceneObject* obj = sceneObjects->At(i);
+            if (obj && !obj->GetParent())
+                root = dynamic_cast<Actor*>(obj);
+        }
+    }
+    if (!root)
+    {
+        LOG(Warning, "Missing prefab root object. {0}", prefab->ToString());
+        return nullptr;
     }
 
     // Prepare parent linkage for prefab root actor
@@ -191,7 +195,7 @@ Actor* PrefabManager::SpawnPrefab(Prefab* prefab, const Transform& transform, Ac
         parent->Children.Add(root);
 
     // Move root to the right location
-    if (transform != Transform::Identity)
+    if (transform.Translation != Vector3::Minimum)
         root->SetTransform(transform);
 
     // Link actors hierarchy
@@ -264,7 +268,7 @@ Actor* PrefabManager::SpawnPrefab(Prefab* prefab, const Transform& transform, Ac
     }
 
     // Link objects to prefab (only deserialized from prefab data)
-    for (int32 i = 0; i < objectsCount; i++)
+    for (int32 i = 0; i < dataCount; i++)
     {
         auto& stream = data[i];
         SceneObject* obj = sceneObjects->At(i);
@@ -374,13 +378,13 @@ bool PrefabManager::CreatePrefab(Actor* targetActor, const StringView& outputPat
     if (targetActor->HasParent())
     {
         // Unlink from parent actor
-        objectInstanceIdToPrefabObjectId.Add(targetActor->GetParent()->GetID(), Guid::Empty);
+        objectInstanceIdToPrefabObjectId[targetActor->GetParent()->GetID()] = Guid::Empty;
     }
     for (int32 i = 0; i < sceneObjects->Count(); i++)
     {
         // Generate new IDs for the prefab objects (other than reference instance used to create prefab)
         const SceneObject* obj = sceneObjects->At(i);
-        objectInstanceIdToPrefabObjectId.Add(obj->GetSceneObjectId(), Guid::New());
+        objectInstanceIdToPrefabObjectId[obj->GetSceneObjectId()] = Guid::New();
     }
     {
         // Parse json to DOM document

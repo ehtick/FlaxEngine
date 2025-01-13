@@ -1,8 +1,9 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using FlaxEditor.Content.Settings;
 using FlaxEditor.GUI;
+using FlaxEditor.Scripting;
 using FlaxEngine;
 
 namespace FlaxEditor.Surface.Archetypes
@@ -95,6 +96,7 @@ namespace FlaxEditor.Surface.Archetypes
             {
                 TypeID = 1,
                 Title = "Texture",
+                Create = (id, context, arch, groupArch) => new Constants.ConvertToParameterNode(id, context, arch, groupArch, new ScriptType(typeof(Texture))),
                 Description = "Two dimensional texture object",
                 Flags = NodeFlags.MaterialGraph,
                 Size = new Float2(140, 120),
@@ -131,6 +133,7 @@ namespace FlaxEditor.Surface.Archetypes
             {
                 TypeID = 3,
                 Title = "Cube Texture",
+                Create = (id, context, arch, groupArch) => new Constants.ConvertToParameterNode(id, context, arch, groupArch, new ScriptType(typeof(CubeTexture))),
                 Description = "Set of 6 textures arranged in a cube",
                 Flags = NodeFlags.MaterialGraph,
                 Size = new Float2(140, 120),
@@ -154,6 +157,7 @@ namespace FlaxEditor.Surface.Archetypes
             {
                 TypeID = 4,
                 Title = "Normal Map",
+                Create = (id, context, arch, groupArch) => new Constants.ConvertToParameterNode(id, context, arch, groupArch, new ScriptType(typeof(NormalMap))),
                 Description = "Two dimensional texture object sampled as a normal map",
                 Flags = NodeFlags.MaterialGraph,
                 Size = new Float2(140, 120),
@@ -364,11 +368,13 @@ namespace FlaxEditor.Surface.Archetypes
                 Title = "Sample Global SDF",
                 Description = "Samples the Global SDF to get the distance to the closest surface (in world-space). Requires models SDF to be generated and checking `Enable Global SDF` in Graphics Settings.",
                 Flags = NodeFlags.MaterialGraph | NodeFlags.ParticleEmitterGraph,
-                Size = new Float2(200, 20),
+                Size = new Float2(200, 40),
+                DefaultValues = new object[] { 0 },
                 Elements = new[]
                 {
                     NodeElementArchetype.Factory.Output(0, "Distance", typeof(float), 0),
                     NodeElementArchetype.Factory.Input(0, "World Position", true, typeof(Float3), 1),
+                    NodeElementArchetype.Factory.Input(1, "Start Cascade", true, typeof(int), 2, 0),
                 }
             },
             new NodeArchetype
@@ -378,11 +384,13 @@ namespace FlaxEditor.Surface.Archetypes
                 Description = "Samples the Global SDF to get the gradient and distance to the closest surface (in world-space). Normalize gradient to get SDF surface normal vector. Requires models SDF to be generated and checking `Enable Global SDF` in Graphics Settings.",
                 Flags = NodeFlags.MaterialGraph | NodeFlags.ParticleEmitterGraph,
                 Size = new Float2(260, 40),
+                DefaultValues = new object[] { 0 },
                 Elements = new[]
                 {
                     NodeElementArchetype.Factory.Output(0, "Gradient", typeof(Float3), 0),
                     NodeElementArchetype.Factory.Output(1, "Distance", typeof(float), 2),
                     NodeElementArchetype.Factory.Input(0, "World Position", true, typeof(Float3), 1),
+                    NodeElementArchetype.Factory.Input(1, "Start Cascade", true, typeof(int), 3, 0),
                 }
             },
             new NodeArchetype
@@ -400,9 +408,9 @@ namespace FlaxEditor.Surface.Archetypes
                 Elements = new[]
                 {
                     NodeElementArchetype.Factory.Input(0, "Texture", true, typeof(FlaxEngine.Object), 0),
-                    NodeElementArchetype.Factory.Input(1, "Scale", true, typeof(Float3), 1, 0),
+                    NodeElementArchetype.Factory.Input(1, "Scale", true, typeof(Float4), 1, 0),
                     NodeElementArchetype.Factory.Input(2, "Blend", true, typeof(float), 2, 1),
-                    NodeElementArchetype.Factory.Output(0, "Color", typeof(Float3), 3)
+                    NodeElementArchetype.Factory.Output(0, "Color", typeof(Float4), 3)
                 }
             },
             new NodeArchetype
@@ -430,6 +438,19 @@ namespace FlaxEditor.Surface.Archetypes
                     NodeElementArchetype.Factory.ComboBox(50, Surface.Constants.LayoutOffsetY * 4, 100, 0, typeof(CommonSamplerType))
                 }
             },
+            new NodeArchetype
+            {
+                TypeID = 18,
+                Title = "Lightmap UV",
+                AlternativeTitles = new string[] { "Lightmap TexCoord" }, 
+                Description = "Lightmap UVs",
+                Flags = NodeFlags.MaterialGraph,
+                Size = new Float2(110, 30),
+                Elements = new []
+                {
+                    NodeElementArchetype.Factory.Output(0, "UVs", typeof(Float2), 0)
+                }
+            }
         };
     }
 }

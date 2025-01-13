@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "GPUShader.h"
 #include "GPUConstantBuffer.h"
@@ -87,7 +87,11 @@ bool GPUShader::Create(MemoryReadStream& stream)
     GPUShaderProgramInitializer initializer;
 #if !BUILD_RELEASE
     initializer.Owner = this;
+    const StringView name = GetName();
+#else
+    const StringView name;
 #endif
+    const bool hasCompute = GPUDevice::Instance->Limits.HasCompute;
     for (int32 i = 0; i < shadersCount; i++)
     {
         const ShaderStage type = static_cast<ShaderStage>(stream.ReadByte());
@@ -117,10 +121,23 @@ bool GPUShader::Create(MemoryReadStream& stream)
             stream.ReadBytes(&initializer.Bindings, sizeof(ShaderBindings));
 
             // Create shader program
+            if (type == ShaderStage::Compute && !hasCompute)
+            {
+                LOG(Warning, "Failed to create {} Shader program '{}' ({}).", ::ToString(type), String(initializer.Name), name);
+                continue;
+            }
             GPUShaderProgram* shader = CreateGPUShaderProgram(type, initializer, cache, cacheSize, stream);
             if (shader == nullptr)
             {
-                LOG(Error, "Failed to create {} Shader program '{}'.", ::ToString(type), String(initializer.Name));
+#if !GPU_ALLOW_TESSELLATION_SHADERS
+            if (type == ShaderStage::Hull || type == ShaderStage::Domain)
+                continue;
+#endif
+#if !GPU_ALLOW_GEOMETRY_SHADERS
+            if (type == ShaderStage::Geometry)
+                continue;
+#endif
+                LOG(Error, "Failed to create {} Shader program '{}' ({}).", ::ToString(type), String(initializer.Name), name);
                 return true;
             }
 

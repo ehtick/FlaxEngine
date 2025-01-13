@@ -47,6 +47,10 @@ extern "C" typedef HRESULT (WINAPI *t_GetThreadDescription)( HANDLE, PWSTR* );
 #ifdef TRACY_ENABLE
 #  include <atomic>
 #  include "TracyAlloc.hpp"
+
+#if !defined(_WIN32) && !defined(__APPLE__) && !defined(__linux__)
+#include "Engine/Platform/Platform.h"
+#endif
 #endif
 
 namespace tracy
@@ -88,7 +92,7 @@ TRACY_API uint32_t GetThreadHandleImpl()
     // thread identifier. It is a pointer to a library-allocated data structure instead.
     // Such pointers will be reused heavily, making the pthread_t non-unique. Additionally
     // a 64-bit pointer cannot be reliably truncated to 32 bits.
-    #error "Unsupported platform!"
+    return Platform::GetCurrentThreadID();
 #endif
 
 }
@@ -205,61 +209,60 @@ TRACY_API const char* GetThreadName( uint32_t id )
         }
         ptr = ptr->next;
     }
-#else
-#  if defined _WIN32
-#    ifdef TRACY_UWP
-    static auto _GetThreadDescription = &::GetThreadDescription;
-#    else
-    static auto _GetThreadDescription = (t_GetThreadDescription)GetProcAddress( GetModuleHandleA( "kernel32.dll" ), "GetThreadDescription" );
-#    endif
+#endif
+
+#if defined _WIN32
+# ifdef TRACY_UWP
+   static auto _GetThreadDescription = &::GetThreadDescription;
+# else
+   static auto _GetThreadDescription = (t_GetThreadDescription)GetProcAddress( GetModuleHandleA( "kernel32.dll" ), "GetThreadDescription" );
+# endif
     if( _GetThreadDescription )
     {
         auto hnd = OpenThread( THREAD_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)id );
         if( hnd != 0 )
         {
             PWSTR tmp;
-            _GetThreadDescription( hnd, &tmp );
-            auto ret = wcstombs( buf, tmp, 256 );
-            CloseHandle( hnd );
-            if( ret != 0 )
+            if( SUCCEEDED( _GetThreadDescription( hnd, &tmp ) ) )
             {
-                return buf;
+                auto ret = wcstombs( buf, tmp, 256 );
+                CloseHandle( hnd );
+                LocalFree( tmp );
+                if( ret != static_cast<size_t>( -1 ) )
+                {
+                    return buf;
+                }
             }
         }
     }
-#  elif defined __linux__
-    int cs, fd;
-    char path[32];
-#   ifdef __ANDROID__
-    int tid = gettid();
-#   else
-    int tid = (int) syscall( SYS_gettid );
-#   endif
-    snprintf( path, sizeof( path ), "/proc/self/task/%d/comm", tid );
-    sprintf( buf, "%" PRIu32, id );
-#   ifndef __ANDROID__
-    pthread_setcancelstate( PTHREAD_CANCEL_DISABLE, &cs );
-#   endif
-    if ( ( fd = open( path, O_RDONLY ) ) > 0) {
-        int len = read( fd, buf, 255 );
-        if( len > 0 )
-        {
-            buf[len] = 0;
-            if( len > 1 && buf[len-1] == '\n' )
-            {
-                buf[len-1] = 0;
-            }
-        }
-        close( fd );
-    }
-#   ifndef __ANDROID__
-    pthread_setcancelstate( cs, 0 );
-#   endif
-    return buf;
-#  endif
+#elif defined __linux__
+  int cs, fd;
+  char path[32];
+  snprintf( path, sizeof( path ), "/proc/self/task/%d/comm", id );
+  sprintf( buf, "%" PRIu32, id );
+# ifndef __ANDROID__
+   pthread_setcancelstate( PTHREAD_CANCEL_DISABLE, &cs );
+# endif
+  if ( ( fd = open( path, O_RDONLY ) ) > 0) {
+      int len = read( fd, buf, 255 );
+      if( len > 0 )
+      {
+          buf[len] = 0;
+          if( len > 1 && buf[len-1] == '\n' )
+          {
+              buf[len-1] = 0;
+          }
+      }
+      close( fd );
+  }
+# ifndef __ANDROID__
+   pthread_setcancelstate( cs, 0 );
+# endif
+  return buf;
 #endif
-    sprintf( buf, "%" PRIu32, id );
-    return buf;
+
+  sprintf( buf, "%" PRIu32, id );
+  return buf;
 }
 
 TRACY_API const char* GetEnvVar( const char* name )
@@ -295,3 +298,13 @@ TRACY_API const char* GetEnvVar( const char* name )
 }
 
 }
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+TRACY_API void ___tracy_set_thread_name( const char* name ) { tracy::SetThreadName( name ); }
+
+#ifdef __cplusplus
+}
+#endif

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -16,6 +16,7 @@ class Texture;
 API_CLASS(Abstract, Namespace="FlaxEditor.Content.Settings") class FLAXENGINE_API ApplePlatformSettings : public SettingsBase
 {
     DECLARE_SCRIPTING_TYPE_MINIMAL(ApplePlatformSettings);
+    API_AUTO_SERIALIZATION();
 
     /// <summary>
     /// The app identifier (reversed DNS, eg. com.company.product). Custom tokens: ${PROJECT_NAME}, ${COMPANY_NAME}.
@@ -28,14 +29,6 @@ API_CLASS(Abstract, Namespace="FlaxEditor.Content.Settings") class FLAXENGINE_AP
     /// </summary>
     API_FIELD(Attributes="EditorOrder(1000), EditorDisplay(\"Other\")")
     SoftObjectReference<Texture> OverrideIcon;
-
-public:
-    // [SettingsBase]
-    void Deserialize(DeserializeStream& stream, ISerializeModifier* modifier) override
-    {
-        DESERIALIZE(AppIdentifier);
-        DESERIALIZE(OverrideIcon);
-    }
 };
 
 #endif

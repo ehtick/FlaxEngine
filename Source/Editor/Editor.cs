@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -7,6 +7,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
+using System.Threading.Tasks;
 using FlaxEditor.Content;
 using FlaxEditor.Content.Settings;
 using FlaxEditor.Content.Thumbnails;
@@ -48,9 +49,9 @@ namespace FlaxEditor
         }
 
         private readonly List<EditorModule> _modules = new List<EditorModule>(16);
-        private bool _isAfterInit, _areModulesInited, _areModulesAfterInitEnd, _isHeadlessMode;
+        private bool _isAfterInit, _areModulesInited, _areModulesAfterInitEnd, _isHeadlessMode, _autoExit;
         private string _projectToOpen;
-        private float _lastAutoSaveTimer;
+        private float _lastAutoSaveTimer, _autoExitTimeout = 0.1f;
         private Button _saveNowButton;
         private Button _cancelSaveButton;
         private bool _autoSaveNow;
@@ -247,15 +248,21 @@ namespace FlaxEditor
         /// </summary>
         public event Action PlayModeEnd;
 
+        /// <summary>
+        /// Fired on Editor update
+        /// </summary>
+        public event Action EditorUpdate;
+
         internal Editor()
         {
             Instance = this;
         }
 
-        internal void Init(bool isHeadless, bool skipCompile, bool newProject, Guid startupScene)
+        internal void Init(StartupFlags flags, Guid startupScene)
         {
             Log("Setting up C# Editor...");
-            _isHeadlessMode = isHeadless;
+            _isHeadlessMode = flags.HasFlag(StartupFlags.Headless);
+            _autoExit = flags.HasFlag(StartupFlags.Exit);
             _startupSceneCmdLine = startupScene;
 
             Profiler.BeginEvent("Projects");
@@ -290,13 +297,12 @@ namespace FlaxEditor
 
             StateMachine = new EditorStateMachine(this);
             Undo = new EditorUndo(this);
-            UIControl.FallbackParentGetDelegate += OnUIControlFallbackParentGet;
 
-            if (newProject)
+            if (flags.HasFlag(StartupFlags.NewProject))
                 InitProject();
             EnsureState<LoadingState>();
             Log("Editor init");
-            if (isHeadless)
+            if (_isHeadlessMode)
                 Log("Running in headless mode");
 
             // Note: we don't sort modules before Init (optimized)
@@ -331,7 +337,7 @@ namespace FlaxEditor
                 }
                 case GeneralOptions.StartupSceneModes.LastOpened:
                 {
-                    if (ProjectCache.TryGetCustomData(ProjectDataLastScene, out var lastSceneIdName))
+                    if (ProjectCache.TryGetCustomData(ProjectDataLastScene, out string lastSceneIdName))
                     {
                         var lastScenes = JsonSerializer.Deserialize<Guid[]>(lastSceneIdName);
                         foreach (var scene in lastScenes)
@@ -352,28 +358,7 @@ namespace FlaxEditor
             InitializationStart?.Invoke();
 
             // Start Editor initialization ending phrase (will wait for scripts compilation result)
-            StateMachine.LoadingState.StartInitEnding(skipCompile);
-        }
-
-        private ContainerControl OnUIControlFallbackParentGet(UIControl control)
-        {
-            // Check if prefab root control is this UIControl
-            var loadingPreview = Viewport.Previews.PrefabPreview.LoadingPreview;
-            var activePreviews = Viewport.Previews.PrefabPreview.ActivePreviews;
-            if (activePreviews != null)
-            {
-                foreach (var preview in activePreviews)
-                {
-                    if (preview == loadingPreview ||
-                        (preview.Instance != null && (preview.Instance == control || preview.Instance.HasActorInHierarchy(control))))
-                    {
-                        // Link it to the prefab preview to see it in the editor
-                        preview.customControlLinked = control;
-                        return preview;
-                    }
-                }
-            }
-            return null;
+            StateMachine.LoadingState.StartInitEnding(flags.HasFlag(StartupFlags.SkipCompile));
         }
 
         internal void RegisterModule(EditorModule module)
@@ -464,7 +449,7 @@ namespace FlaxEditor
                 }
                 case GeneralOptions.StartupSceneModes.LastOpened:
                 {
-                    if (ProjectCache.TryGetCustomData(ProjectDataLastScene, out var lastSceneIdName))
+                    if (ProjectCache.TryGetCustomData(ProjectDataLastScene, out string lastSceneIdName))
                     {
                         var lastScenes = JsonSerializer.Deserialize<Guid[]>(lastSceneIdName);
                         foreach (var sceneId in lastScenes)
@@ -481,7 +466,7 @@ namespace FlaxEditor
                         }
 
                         // Restore view
-                        if (ProjectCache.TryGetCustomData(ProjectDataLastSceneSpawn, out var lastSceneSpawnName))
+                        if (ProjectCache.TryGetCustomData(ProjectDataLastSceneSpawn, out string lastSceneSpawnName))
                             Windows.EditWin.Viewport.ViewRay = JsonSerializer.Deserialize<Ray>(lastSceneSpawnName);
                     }
                     break;
@@ -502,11 +487,22 @@ namespace FlaxEditor
             {
                 StateMachine.Update();
                 UpdateAutoSave();
+                if (_autoExit && StateMachine.CurrentState == StateMachine.EditingSceneState)
+                {
+                    _autoExitTimeout -= Time.UnscaledGameTime;
+                    if (_autoExitTimeout < 0.0f)
+                    {
+                        Log("Auto exit");
+                        Engine.RequestExit(0);
+                    }
+                }
 
                 if (!StateMachine.IsPlayMode)
                 {
                     StateMachine.CurrentState.UpdateFPS();
                 }
+                
+                EditorUpdate?.Invoke();
 
                 // Update modules
                 for (int i = 0; i < _modules.Count; i++)
@@ -869,7 +865,9 @@ namespace FlaxEditor
 
         /// <summary>
         /// New asset types allowed to create.
+        /// [Deprecated in v1.8]
         /// </summary>
+        [Obsolete("Use CreateAsset with named tag instead")]
         public enum NewAssetType
         {
             /// <summary>
@@ -1046,12 +1044,59 @@ namespace FlaxEditor
 
         /// <summary>
         /// Creates new asset at the target location.
+        /// [Deprecated in v1.8]
         /// </summary>
         /// <param name="type">New asset type.</param>
         /// <param name="outputPath">Output asset path.</param>
+        [Obsolete("Use CreateAsset with named tag instead")]
         public static bool CreateAsset(NewAssetType type, string outputPath)
         {
-            return Internal_CreateAsset(type, outputPath);
+            // [Deprecated on 18.02.2024, expires on 18.02.2025]
+            string tag;
+            switch (type)
+            {
+            case NewAssetType.Material:
+                tag = "Material";
+                break;
+            case NewAssetType.MaterialInstance:
+                tag = "MaterialInstance";
+                break;
+            case NewAssetType.CollisionData:
+                tag = "CollisionData";
+                break;
+            case NewAssetType.AnimationGraph:
+                tag = "AnimationGraph";
+                break;
+            case NewAssetType.SkeletonMask:
+                tag = "SkeletonMask";
+                break;
+            case NewAssetType.ParticleEmitter:
+                tag = "ParticleEmitter";
+                break;
+            case NewAssetType.ParticleSystem:
+                tag = "ParticleSystem";
+                break;
+            case NewAssetType.SceneAnimation:
+                tag = "SceneAnimation";
+                break;
+            case NewAssetType.MaterialFunction:
+                tag = "MaterialFunction";
+                break;
+            case NewAssetType.ParticleEmitterFunction:
+                tag = "ParticleEmitterFunction";
+                break;
+            case NewAssetType.AnimationGraphFunction:
+                tag = "AnimationGraphFunction";
+                break;
+            case NewAssetType.Animation:
+                tag = "Animation";
+                break;
+            case NewAssetType.BehaviorTree:
+                tag = "BehaviorTree";
+                break;
+            default: return true;
+            }
+            return CreateAsset(tag, outputPath);
         }
 
         /// <summary>
@@ -1311,19 +1356,32 @@ namespace FlaxEditor
         /// </summary>
         public void BuildAllMeshesSDF()
         {
-            // TODO: async maybe with progress reporting?
+            var models = new List<Model>();
             Scene.ExecuteOnGraph(node =>
             {
                 if (node is StaticModelNode staticModelNode && staticModelNode.Actor is StaticModel staticModel)
                 {
-                    if (staticModel.DrawModes.HasFlag(DrawPass.GlobalSDF) && staticModel.Model != null && !staticModel.Model.IsVirtual && staticModel.Model.SDF.Texture == null)
+                    var model = staticModel.Model;
+                    if (staticModel.DrawModes.HasFlag(DrawPass.GlobalSDF) &&
+                        model != null &&
+                        !models.Contains(model) &&
+                        !model.IsVirtual &&
+                        model.SDF.Texture == null)
                     {
-                        Log("Generating SDF for " + staticModel.Model);
-                        if (!staticModel.Model.GenerateSDF())
-                            staticModel.Model.Save();
+                        models.Add(model);
                     }
                 }
                 return true;
+            });
+            Task.Run(() =>
+            {
+                for (int i = 0; i < models.Count; i++)
+                {
+                    var model = models[i];
+                    Log($"[{i}/{models.Count}] Generating SDF for {model}");
+                    if (!model.GenerateSDF())
+                        model.Save();
+                }
             });
         }
 
@@ -1337,118 +1395,17 @@ namespace FlaxEditor
             public byte AutoReloadScriptsOnMainWindowFocus;
             public byte ForceScriptCompilationOnStartup;
             public byte UseAssetImportPathRelative;
+            public byte EnableParticlesPreview;
             public byte AutoRebuildCSG;
             public float AutoRebuildCSGTimeoutMs;
             public byte AutoRebuildNavMesh;
             public float AutoRebuildNavMeshTimeoutMs;
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        [NativeMarshalling(typeof(VisualScriptLocalMarshaller))]
-        internal struct VisualScriptLocal
-        {
-            public string Value;
-            public string ValueTypeName;
-            public uint NodeId;
-            public int BoxId;
-        }
-
-        [CustomMarshaller(typeof(VisualScriptLocal), MarshalMode.Default, typeof(VisualScriptLocalMarshaller))]
-        internal static class VisualScriptLocalMarshaller
-        {
-            [StructLayout(LayoutKind.Sequential)]
-            internal struct VisualScriptLocalNative
-            {
-                public IntPtr Value;
-                public IntPtr ValueTypeName;
-                public uint NodeId;
-                public int BoxId;
-            }
-
-            internal static VisualScriptLocal ConvertToManaged(VisualScriptLocalNative unmanaged) => ToManaged(unmanaged);
-            internal static VisualScriptLocalNative ConvertToUnmanaged(VisualScriptLocal managed) => ToNative(managed);
-
-            internal static VisualScriptLocal ToManaged(VisualScriptLocalNative managed)
-            {
-                return new VisualScriptLocal()
-                {
-                    Value = ManagedString.ToManaged(managed.Value),
-                    ValueTypeName = ManagedString.ToManaged(managed.ValueTypeName),
-                    NodeId = managed.NodeId,
-                    BoxId = managed.BoxId,
-                };
-            }
-
-            internal static VisualScriptLocalNative ToNative(VisualScriptLocal managed)
-            {
-                return new VisualScriptLocalNative()
-                {
-                    Value = ManagedString.ToNative(managed.Value),
-                    ValueTypeName = ManagedString.ToNative(managed.ValueTypeName),
-                    NodeId = managed.NodeId,
-                    BoxId = managed.BoxId,
-                };
-            }
-
-            internal static void Free(VisualScriptLocalNative unmanaged)
-            {
-                ManagedString.Free(unmanaged.Value);
-                ManagedString.Free(unmanaged.ValueTypeName);
-            }
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        [NativeMarshalling(typeof(VisualScriptStackFrameMarshaller))]
-        internal struct VisualScriptStackFrame
-        {
-            public VisualScript Script;
-            public uint NodeId;
-            public int BoxId;
-        }
-
-        [CustomMarshaller(typeof(VisualScriptStackFrame), MarshalMode.Default, typeof(VisualScriptStackFrameMarshaller))]
-        internal static class VisualScriptStackFrameMarshaller
-        {
-            [StructLayout(LayoutKind.Sequential)]
-            internal struct VisualScriptStackFrameNative
-            {
-                public IntPtr Script;
-                public uint NodeId;
-                public int BoxId;
-            }
-
-            internal static VisualScriptStackFrame ConvertToManaged(VisualScriptStackFrameNative unmanaged) => ToManaged(unmanaged);
-            internal static VisualScriptStackFrameNative ConvertToUnmanaged(VisualScriptStackFrame managed) => ToNative(managed);
-
-            internal static VisualScriptStackFrame ToManaged(VisualScriptStackFrameNative managed)
-            {
-                return new VisualScriptStackFrame()
-                {
-                    Script = VisualScriptMarshaller.ConvertToManaged(managed.Script),
-                    NodeId = managed.NodeId,
-                    BoxId = managed.BoxId,
-                };
-            }
-
-            internal static VisualScriptStackFrameNative ToNative(VisualScriptStackFrame managed)
-            {
-                return new VisualScriptStackFrameNative()
-                {
-                    Script = VisualScriptMarshaller.ConvertToUnmanaged(managed.Script),
-                    NodeId = managed.NodeId,
-                    BoxId = managed.BoxId,
-                };
-            }
-
-            internal static void Free(VisualScriptStackFrameNative unmanaged)
-            {
-            }
-        }
-
         internal void BuildCommand(string arg)
         {
             if (TryBuildCommand(arg))
-                Engine.RequestExit();
+                Engine.RequestExit(1);
         }
 
         private bool TryBuildCommand(string arg)
@@ -1690,10 +1647,6 @@ namespace FlaxEditor
         [LibraryImport("FlaxEngine", EntryPoint = "EditorInternal_CloseSplashScreen", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(StringMarshaller))]
         internal static partial void Internal_CloseSplashScreen();
 
-        [LibraryImport("FlaxEngine", EntryPoint = "EditorInternal_CreateAsset", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(StringMarshaller))]
-        [return: MarshalAs(UnmanagedType.U1)]
-        internal static partial bool Internal_CreateAsset(NewAssetType type, string outputPath);
-
         [LibraryImport("FlaxEngine", EntryPoint = "EditorInternal_CreateVisualScript", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(StringMarshaller))]
         [return: MarshalAs(UnmanagedType.U1)]
         internal static partial bool Internal_CreateVisualScript(string outputPath, string baseTypename);
@@ -1723,21 +1676,6 @@ namespace FlaxEditor
         [LibraryImport("FlaxEngine", EntryPoint = "EditorInternal_RunVisualScriptBreakpointLoopTick", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(StringMarshaller))]
         internal static partial void Internal_RunVisualScriptBreakpointLoopTick(float deltaTime);
 
-        [LibraryImport("FlaxEngine", EntryPoint = "EditorInternal_GetVisualScriptLocals", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(StringMarshaller))]
-        [return: MarshalUsing(typeof(FlaxEngine.Interop.ArrayMarshaller<,>), CountElementName = "localsCount")]
-        internal static partial VisualScriptLocal[] Internal_GetVisualScriptLocals(out int localsCount);
-
-        [LibraryImport("FlaxEngine", EntryPoint = "EditorInternal_GetVisualScriptStackFrames", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(StringMarshaller))]
-        [return: MarshalUsing(typeof(FlaxEngine.Interop.ArrayMarshaller<,>), CountElementName = "stackFrameCount")]
-        internal static partial VisualScriptStackFrame[] Internal_GetVisualScriptStackFrames(out int stackFrameCount);
-
-        [LibraryImport("FlaxEngine", EntryPoint = "EditorInternal_GetVisualScriptPreviousScopeFrame", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(StringMarshaller))]
-        internal static partial VisualScriptStackFrame Internal_GetVisualScriptPreviousScopeFrame();
-
-        [LibraryImport("FlaxEngine", EntryPoint = "EditorInternal_EvaluateVisualScriptLocal", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(StringMarshaller))]
-        [return: MarshalAs(UnmanagedType.U1)]
-        internal static partial bool Internal_EvaluateVisualScriptLocal(IntPtr script, ref VisualScriptLocal local);
-
         [LibraryImport("FlaxEngine", EntryPoint = "EditorInternal_DeserializeSceneObject", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(StringMarshaller))]
         internal static partial void Internal_DeserializeSceneObject(IntPtr sceneObject, string json);
 
@@ -1747,6 +1685,9 @@ namespace FlaxEditor
         [LibraryImport("FlaxEngine", EntryPoint = "EditorInternal_CanSetToRoot", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(StringMarshaller))]
         [return: MarshalAs(UnmanagedType.U1)]
         internal static partial bool Internal_CanSetToRoot(IntPtr prefab, IntPtr newRoot);
+
+        [LibraryImport("FlaxEngine", EntryPoint = "EditorInternal_GetPrefabNestedObject", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(StringMarshaller))]
+        internal static partial void Internal_GetPrefabNestedObject(IntPtr prefabId, IntPtr prefabObjectId, IntPtr outPrefabId, IntPtr outPrefabObjectId);
 
         [LibraryImport("FlaxEngine", EntryPoint = "EditorInternal_GetAnimationTime", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(StringMarshaller))]
         internal static partial float Internal_GetAnimationTime(IntPtr animatedModel);

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #if PLATFORM_WINDOWS
 
@@ -273,7 +273,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
-LONG CALLBACK SehExceptionHandler(EXCEPTION_POINTERS* ep)
+long __stdcall WindowsPlatform::SehExceptionHandler(EXCEPTION_POINTERS* ep)
 {
     if (ep->ExceptionRecord->ExceptionCode == CLR_EXCEPTION)
     {
@@ -451,6 +451,7 @@ DialogResult MessageBox::Show(Window* parent, const StringView& text, const Stri
     default:
         break;
     }
+    flags |= MB_TASKMODAL;
 
     // Show dialog
     int result = MessageBoxW(parent ? static_cast<HWND>(parent->GetNativePtr()) : nullptr, String(text).GetText(), String(caption).GetText(), flags);
@@ -1200,8 +1201,8 @@ void* WindowsPlatform::LoadLibrary(const Char* filename)
         folder = StringView::Empty;
     if (folder.HasChars())
     {
-        String folderNullTerminated(folder);
-        SetDllDirectoryW(folderNullTerminated.Get());
+        const String folderNullTerminated(folder);
+        AddDllDirectory(folderNullTerminated.Get());
     }
 
     // Avoiding windows dialog boxes if missing
@@ -1209,7 +1210,10 @@ void* WindowsPlatform::LoadLibrary(const Char* filename)
     DWORD prevErrorMode = 0;
     const BOOL hasErrorMode = SetThreadErrorMode(errorMode, &prevErrorMode);
 
-    // Load the DLL
+    // Ensure that dll is properly searched
+    SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_SYSTEM32 | LOAD_LIBRARY_SEARCH_USER_DIRS);
+
+    // Load the library
     void* handle = ::LoadLibraryW(filename);
     if (!handle)
     {
@@ -1219,10 +1223,6 @@ void* WindowsPlatform::LoadLibrary(const Char* filename)
     if (hasErrorMode)
     {
         SetThreadErrorMode(prevErrorMode, nullptr);
-    }
-    if (folder.HasChars())
-    {
-        SetDllDirectoryW(nullptr);
     }
 
 #if CRASH_LOG_ENABLE
@@ -1311,6 +1311,14 @@ Array<PlatformBase::StackFrame> WindowsPlatform::GetStackFrames(int32 skipCount,
         stack.AddrBStore.Offset = ctx.RsBSP;
         stack.AddrBStore.Mode = AddrModeFlat;
         stack.AddrStack.Offset = ctx.IntSp;
+        stack.AddrStack.Mode = AddrModeFlat;
+#elif _M_ARM64
+        imageType = IMAGE_FILE_MACHINE_ARM64;
+        stack.AddrPC.Offset = ctx.Pc;
+        stack.AddrPC.Mode = AddrModeFlat;
+        stack.AddrFrame.Offset = ctx.Fp;
+        stack.AddrFrame.Mode = AddrModeFlat;
+        stack.AddrStack.Offset = ctx.Sp;
         stack.AddrStack.Mode = AddrModeFlat;
 #else
 #error "Platform not supported!"

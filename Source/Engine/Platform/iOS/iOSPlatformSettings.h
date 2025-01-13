@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -12,6 +12,7 @@
 API_CLASS(Sealed, Namespace="FlaxEditor.Content.Settings") class FLAXENGINE_API iOSPlatformSettings : public ApplePlatformSettings
 {
     DECLARE_SCRIPTING_TYPE_MINIMAL(ApplePlatformSettings);
+    API_AUTO_SERIALIZATION();
 
     /// <summary>
     /// The app export destination methods.
@@ -46,6 +47,24 @@ API_CLASS(Sealed, Namespace="FlaxEditor.Content.Settings") class FLAXENGINE_API 
     };
 
     /// <summary>
+    /// The output textures quality (compression).
+    /// </summary>
+    API_ENUM() enum class TextureQuality
+    {
+        // Raw image data without any compression algorithm. Mostly for testing or compatibility.
+        Uncompressed,
+        // ASTC 4x4 block compression.
+        API_ENUM(Attributes="EditorDisplay(null, \"ASTC High\")")
+        ASTC_High,
+        // ASTC 6x6 block compression.
+        API_ENUM(Attributes="EditorDisplay(null, \"ASTC Medium\")")
+        ASTC_Medium,
+        // ASTC 8x8 block compression.
+        API_ENUM(Attributes="EditorDisplay(null, \"ASTC Low\")")
+        ASTC_Low,
+    };
+
+    /// <summary>
     /// The app developer name - App Store Team ID. For example: 'VG6K6HT8B'.
     /// </summary>
     API_FIELD(Attributes="EditorOrder(10), EditorDisplay(\"General\")")
@@ -64,6 +83,12 @@ API_CLASS(Sealed, Namespace="FlaxEditor.Content.Settings") class FLAXENGINE_API 
     ExportMethods ExportMethod = ExportMethods::Development;
 
     /// <summary>
+    /// The output textures quality (compression).
+    /// </summary>
+    API_FIELD(Attributes="EditorOrder(100), EditorDisplay(\"General\")")
+    TextureQuality TexturesQuality = TextureQuality::ASTC_Medium;
+
+    /// <summary>
     /// The UI interface orientation modes supported on iPhone devices.
     /// </summary>
     API_FIELD(Attributes="EditorOrder(200), EditorDisplay(\"UI\", \"Supported Interface Orientations (iPhone)\")")
@@ -79,17 +104,6 @@ API_CLASS(Sealed, Namespace="FlaxEditor.Content.Settings") class FLAXENGINE_API 
     /// Gets the instance of the settings asset (default value if missing). Object returned by this method is always loaded with valid data to use.
     /// </summary>
     static iOSPlatformSettings* Get();
-
-    // [SettingsBase]
-    void Deserialize(DeserializeStream& stream, ISerializeModifier* modifier) final override
-    {
-        ApplePlatformSettings::Deserialize(stream, modifier);
-        DESERIALIZE(AppTeamId);
-        DESERIALIZE(AppVersion);
-        DESERIALIZE(ExportMethod);
-        DESERIALIZE(SupportedInterfaceOrientationsiPhone);
-        DESERIALIZE(SupportedInterfaceOrientationsiPad);
-    }
 };
 
 #if PLATFORM_IOS

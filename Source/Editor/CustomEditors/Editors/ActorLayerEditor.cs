@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System.Collections.Generic;
 using FlaxEditor.Content.Settings;
@@ -34,7 +34,7 @@ namespace FlaxEditor.CustomEditors.Editors
                 value = 0;
 
             // If selected is single actor that has children, ask if apply layer to the sub objects as well
-            if (Values.IsSingleObject && (int)Values[0] != value && ParentEditor.Values[0] is Actor actor && actor.HasChildren)
+            if (Values.IsSingleObject && (int)Values[0] != value && ParentEditor.Values[0] is Actor actor && actor.HasChildren && !Editor.IsPlayMode)
             {
                 var valueText = comboBox.SelectedItem;
 

@@ -1,9 +1,8 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "MeshCollider.h"
 #include "Engine/Core/Math/Matrix.h"
 #include "Engine/Core/Math/Ray.h"
-#include "Engine/Serialization/Serialization.h"
 #include "Engine/Physics/Physics.h"
 #include "Engine/Physics/PhysicsScene.h"
 #if USE_EDITOR || !BUILD_RELEASE
@@ -117,24 +116,6 @@ bool MeshCollider::IntersectsItself(const Ray& ray, Real& distance, Vector3& nor
     return _box.Intersects(ray, distance, normal);
 }
 
-void MeshCollider::Serialize(SerializeStream& stream, const void* otherObj)
-{
-    // Base
-    Collider::Serialize(stream, otherObj);
-
-    SERIALIZE_GET_OTHER_OBJ(MeshCollider);
-
-    SERIALIZE(CollisionData);
-}
-
-void MeshCollider::Deserialize(DeserializeStream& stream, ISerializeModifier* modifier)
-{
-    // Base
-    Collider::Deserialize(stream, modifier);
-
-    DESERIALIZE(CollisionData);
-}
-
 void MeshCollider::UpdateBounds()
 {
     // Cache bounds
@@ -152,7 +133,13 @@ void MeshCollider::GetGeometry(CollisionShape& collision)
     // Prepare scale
     Float3 scale = _cachedScale;
     const float minSize = 0.001f;
-    scale = Float3::Max(scale.GetAbsolute(), minSize);
+    Float3 scaleAbs = scale.GetAbsolute();
+    if (scaleAbs.X < minSize)
+        scale.X = Math::Sign(scale.X) * minSize;
+    if (scaleAbs.Y < minSize)
+        scale.Y = Math::Sign(scale.Y) * minSize;
+    if (scaleAbs.Z < minSize)
+        scale.Z = Math::Sign(scale.Z) * minSize;
 
     // Setup shape (based on type)
     CollisionDataType type = CollisionDataType::None;

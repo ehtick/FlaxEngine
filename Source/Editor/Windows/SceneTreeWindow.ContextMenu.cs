@@ -1,6 +1,7 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
+using System.Linq;
 using FlaxEditor.GUI.ContextMenu;
 using FlaxEditor.SceneGraph;
 using FlaxEngine;
@@ -51,14 +52,13 @@ namespace FlaxEditor.Windows
             contextMenu.AddSeparator();
 
             // Basic editing options
-
+            var firstSelection = hasSthSelected ? Editor.SceneEditing.Selection[0] as ActorNode : null;
             b = contextMenu.AddButton("Rename", inputOptions.Rename, Rename);
-            b.Enabled = isSingleActorSelected;
-
-            b = contextMenu.AddButton("Duplicate", inputOptions.Duplicate, Editor.SceneEditing.Duplicate);
             b.Enabled = hasSthSelected;
+            b = contextMenu.AddButton("Duplicate", inputOptions.Duplicate, Editor.SceneEditing.Duplicate);
+            b.Enabled = hasSthSelected && (firstSelection != null ? firstSelection.CanDuplicate : true);
 
-            if (isSingleActorSelected)
+            if (isSingleActorSelected && firstSelection?.Actor is not Scene)
             {
                 var convertMenu = contextMenu.AddChildMenu("Convert");
                 convertMenu.ContextMenu.AutoSort = true;
@@ -118,32 +118,60 @@ namespace FlaxEditor.Windows
                 }
             }
             b = contextMenu.AddButton("Delete", inputOptions.Delete, Editor.SceneEditing.Delete);
-            b.Enabled = hasSthSelected;
+            b.Enabled = hasSthSelected && (firstSelection != null ? firstSelection.CanDelete : true);
 
             contextMenu.AddSeparator();
 
             b = contextMenu.AddButton("Copy", inputOptions.Copy, Editor.SceneEditing.Copy);
+            b.Enabled = hasSthSelected && (firstSelection != null ? firstSelection.CanCopyPaste : true);
 
-            b.Enabled = hasSthSelected;
             contextMenu.AddButton("Paste", inputOptions.Paste, Editor.SceneEditing.Paste);
 
             b = contextMenu.AddButton("Cut", inputOptions.Cut, Editor.SceneEditing.Cut);
-            b.Enabled = canEditScene;
+            b.Enabled = canEditScene && hasSthSelected && (firstSelection != null ? firstSelection.CanCopyPaste : true);
 
-            // Prefab options
+            // Create option
 
             contextMenu.AddSeparator();
 
+            b = contextMenu.AddButton("Parent to new Actor", inputOptions.GroupSelectedActors, Editor.SceneEditing.CreateParentForSelectedActors);
+            b.Enabled = canEditScene && hasSthSelected && firstSelection?.Actor is not Scene;
+
             b = contextMenu.AddButton("Create Prefab", Editor.Prefabs.CreatePrefab);
             b.Enabled = isSingleActorSelected &&
-                        ((ActorNode)Editor.SceneEditing.Selection[0]).CanCreatePrefab &&
+                        (firstSelection != null ? firstSelection.CanCreatePrefab : false) &&
                         Editor.Windows.ContentWin.CurrentViewFolder.CanHaveAssets;
 
-            bool hasPrefabLink = canEditScene && isSingleActorSelected && (Editor.SceneEditing.Selection[0] as ActorNode).HasPrefabLink;
+            bool hasPrefabLink = canEditScene && isSingleActorSelected && (firstSelection != null ? firstSelection.HasPrefabLink : false);
             if (hasPrefabLink)
             {
                 contextMenu.AddButton("Select Prefab", Editor.Prefabs.SelectPrefab);
                 contextMenu.AddButton("Break Prefab Link", Editor.Prefabs.BreakLinks);
+            }
+
+            // Load additional scenes option
+
+            if (!hasSthSelected)
+            {
+                var allScenes = FlaxEngine.Content.GetAllAssetsByType(typeof(SceneAsset));
+                var loadedSceneIds = Editor.Instance.Scene.Root.ChildNodes.Select(node => node.ID).ToList();
+                var unloadedScenes = allScenes.Where(sceneId => !loadedSceneIds.Contains(sceneId)).ToList();
+                if (unloadedScenes.Count > 0)
+                {
+                    contextMenu.AddSeparator();
+                    var childCM = contextMenu.GetOrAddChildMenu("Open Scene");
+                    foreach (var sceneGuid in unloadedScenes)
+                    {
+                        if (FlaxEngine.Content.GetAssetInfo(sceneGuid, out var unloadedScene))
+                        {
+                            var splitPath = unloadedScene.Path.Split('/');
+                            var sceneName = splitPath[^1];
+                            if (splitPath[^1].EndsWith(".scene"))
+                                sceneName = sceneName[..^6];
+                            childCM.ContextMenu.AddButton(sceneName, () => { Editor.Instance.Scene.OpenScene(sceneGuid, true); });
+                        }
+                    }
+                }
             }
 
             // Spawning actors options
@@ -228,10 +256,9 @@ namespace FlaxEditor.Windows
         /// </summary>
         /// <param name="parent">The parent control.</param>
         /// <param name="location">The location (within a given control).</param>
-        private void ShowContextMenu(Control parent, Float2 location)
+        internal void ShowContextMenu(Control parent, Float2 location)
         {
             var contextMenu = CreateContextMenu();
-
             contextMenu.Show(parent, location);
         }
 

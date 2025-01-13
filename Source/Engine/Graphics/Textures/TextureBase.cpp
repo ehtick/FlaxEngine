@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "TextureBase.h"
 #include "TextureData.h"
@@ -169,6 +169,38 @@ bool TextureMipData::GetPixels(Array<Color>& pixels, int32 width, int32 height, 
     return false;
 }
 
+void TextureMipData::Copy(void* data, uint32 dataRowPitch, uint32 dataDepthPitch, uint32 dataDepthSlices, uint32 targetRowPitch)
+{
+    // Check if target row pitch is the same
+    if (targetRowPitch == dataRowPitch || targetRowPitch == 0)
+    {
+        Lines = dataDepthPitch / dataRowPitch;
+        DepthPitch = dataDepthPitch;
+        RowPitch = dataRowPitch;
+
+        // Single memory copy
+        Data.Copy((byte*)data, dataDepthPitch * dataDepthSlices);
+    }
+    else
+    {
+        Lines = dataDepthPitch / dataRowPitch;
+        DepthPitch = targetRowPitch * Lines;
+        RowPitch = targetRowPitch;
+
+        // Convert row by row
+        Data.Allocate(DepthPitch * dataDepthSlices);
+        for (uint32 depth = 0; depth < dataDepthSlices; depth++)
+        {
+            byte* src = (byte*)data + depth * dataDepthPitch;
+            byte* dst = Data.Get() + depth * DepthPitch;
+            for (uint32 row = 0; row < Lines; row++)
+            {
+                Platform::MemoryCopy(dst + row * RowPitch, src + row * dataRowPitch, RowPitch);
+            }
+        }
+    }
+}
+
 REGISTER_BINARY_ASSET_ABSTRACT(TextureBase, "FlaxEngine.TextureBase");
 
 TextureBase::TextureBase(const SpawnParams& params, const AssetInfo* info)
@@ -221,6 +253,11 @@ void TextureBase::SetTextureGroup(int32 textureGroup)
         _texture._header.TextureGroup = textureGroup;
         _texture.RequestStreamingUpdate();
     }
+}
+
+bool TextureBase::HasStreamingError() const
+{
+    return _texture.Streaming.Error;
 }
 
 BytesContainer TextureBase::GetMipData(int32 mipIndex, int32& rowPitch, int32& slicePitch)
@@ -660,6 +697,7 @@ uint64 TextureBase::GetMemoryUsage() const
 
 void TextureBase::CancelStreaming()
 {
+    Asset::CancelStreaming();
     _texture.CancelStreamingTasks();
 }
 

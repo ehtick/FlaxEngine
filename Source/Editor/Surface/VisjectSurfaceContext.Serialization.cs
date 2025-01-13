@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -51,6 +51,7 @@ namespace FlaxEditor.Surface
         {
             TypeID = originalNodeId,
             Title = "Missing Node :(",
+            Signature = "Missing Node :(",
             Description = ":(",
             Flags = NodeFlags.AllGraphs,
             Size = new Float2(200, 70),
@@ -630,6 +631,15 @@ namespace FlaxEditor.Surface
                             stream.ReadCommonValue(ref node.Values[j]);
                         }
                     }
+                    else if ((node.Archetype.Flags & NodeFlags.VariableValuesSize) != 0)
+                    {
+                        node.Values = new object[valuesCnt];
+                        for (int j = firstValueReadIdx; j < valuesCnt; j++)
+                        {
+                            // ReSharper disable once PossibleNullReferenceException
+                            stream.ReadCommonValue(ref node.Values[j]);
+                        }
+                    }
                     else
                     {
                         Editor.LogWarning(string.Format("Invalid node values. Loaded: {0}, expected: {1}. Type: {2}, {3}", valuesCnt, nodeValuesCnt, node.Archetype.Title, node.Archetype.TypeID));
@@ -795,6 +805,12 @@ namespace FlaxEditor.Surface
                         for (int j = firstValueReadIdx; j < valuesCnt; j++)
                             node.Values[j] = stream.ReadVariant();
                     }
+                    else if ((node.Archetype.Flags & NodeFlags.VariableValuesSize) != 0)
+                    {
+                        node.Values = new object[valuesCnt];
+                        for (int j = firstValueReadIdx; j < valuesCnt; j++)
+                            node.Values[j] = stream.ReadVariant();
+                    }
                     else
                     {
                         Editor.LogWarning(string.Format("Invalid node values. Loaded: {0}, expected: {1}. Type: {2}, {3}", valuesCnt, nodeValuesCnt, node.Archetype.Title, node.Archetype.TypeID));
@@ -920,12 +936,6 @@ namespace FlaxEditor.Surface
             // Link control
             control.OnLoaded(action);
             control.Parent = RootControl;
-
-            if (control is SurfaceComment)
-            {
-                // Move comments to the background
-                control.IndexInParent = 0;
-            }
         }
 
         /// <summary>

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 
@@ -146,7 +146,7 @@ namespace FlaxEngine
         public string Path;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="BehaviorKnowledgeSelectorAny"/> structure.
+        /// Initializes a new instance of the <see cref="BehaviorKnowledgeSelector{T}"/> structure.
         /// </summary>
         /// <param name="path">The selector path.</param>
         public BehaviorKnowledgeSelector(string path)
@@ -155,7 +155,7 @@ namespace FlaxEngine
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="BehaviorKnowledgeSelectorAny"/> structure.
+        /// Initializes a new instance of the <see cref="BehaviorKnowledgeSelector{T}"/> structure.
         /// </summary>
         /// <param name="other">The other selector.</param>
         public BehaviorKnowledgeSelector(BehaviorKnowledgeSelectorAny other)
@@ -202,7 +202,7 @@ namespace FlaxEngine
         public T Get(BehaviorKnowledge knowledge)
         {
             if (knowledge != null && knowledge.Get(Path, out var value))
-                return (T)value;
+                return Utilities.VariantUtils.Cast<T>(value);
             return default;
         }
 
@@ -218,7 +218,7 @@ namespace FlaxEngine
             object tmp = null;
             bool result = knowledge != null && knowledge.Get(Path, out tmp);
             if (result)
-                value = (T)tmp;
+                value = Utilities.VariantUtils.Cast<T>(tmp);
             return result;
         }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -106,5 +106,5 @@ struct FLAXENGINE_API TextureHeader
     byte CustomData[10];
 
     TextureHeader();
-    TextureHeader(TextureHeader_Deprecated& old);
+    TextureHeader(const TextureHeader_Deprecated& old);
 };

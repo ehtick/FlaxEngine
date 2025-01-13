@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "Variant.h"
 #include "CommonValue.h"
@@ -112,7 +112,7 @@ VariantType::VariantType(Types type, const StringAnsiView& typeName)
     }
 }
 
-VariantType::VariantType(Types type, MClass* klass)
+VariantType::VariantType(Types type, const MClass* klass)
 {
     Type = type;
     TypeName = nullptr;
@@ -136,6 +136,24 @@ VariantType::VariantType(const StringAnsiView& typeName)
         if (typeName == InBuiltTypesTypeNames[i])
         {
             new(this) VariantType((Types)i);
+            return;
+        }
+    }
+    {
+        // Aliases
+        if (typeName == "FlaxEngine.Vector2")
+        {
+            new(this) VariantType(Vector2);
+            return;
+        }
+        if (typeName == "FlaxEngine.Vector3")
+        {
+            new(this) VariantType(Vector3);
+            return;
+        }
+        if (typeName == "FlaxEngine.Vector4")
+        {
+            new(this) VariantType(Vector4);
             return;
         }
     }
@@ -1806,6 +1824,7 @@ Variant::operator Float4() const
         return Float4(*(Float3*)AsData, 0.0f);
     case VariantType::Float4:
     case VariantType::Color:
+    case VariantType::Quaternion:
         return *(Float4*)AsData;
     case VariantType::Double2:
         return Float4(AsDouble2(), 0.0f, 0.0f);
@@ -2431,7 +2450,9 @@ void Variant::SetType(const VariantType& type)
     case VariantType::Structure:
         AllocStructure();
         break;
-    default: ;
+    default:
+        AsUint64 = 0;
+        break;
     }
 }
 
@@ -2684,8 +2705,8 @@ void Variant::SetAsset(Asset* asset)
         SetType(VariantType(VariantType::Asset));
     if (AsAsset)
     {
-        asset->OnUnloaded.Unbind<Variant, &Variant::OnAssetUnloaded>(this);
-        asset->RemoveReference();
+        AsAsset->OnUnloaded.Unbind<Variant, &Variant::OnAssetUnloaded>(this);
+        AsAsset->RemoveReference();
     }
     AsAsset = asset;
     if (asset)
@@ -2720,12 +2741,12 @@ String Variant::ToString() const
                 const auto items = typeHandle.GetType().Enum.Items;
                 for (int32 i = 0; items[i].Name; i++)
                 {
-                    if (items[i].Value == AsUint)
+                    if (items[i].Value == AsUint64)
                         return String(items[i].Name);
                 }
             }
         }
-        return StringUtils::ToString(AsUint);
+        return StringUtils::ToString(AsUint64);
     case VariantType::Int64:
         return StringUtils::ToString(AsInt64);
     case VariantType::Uint64:
@@ -2821,7 +2842,10 @@ void Variant::Inline()
                 type = VariantType::Types::Vector4;
         }
         if (type != VariantType::Null)
+        {
+            ASSERT(sizeof(data) >= AsBlob.Length);
             Platform::MemoryCopy(data, AsBlob.Data, AsBlob.Length);
+        }
     }
     if (type != VariantType::Null)
     {
@@ -2912,6 +2936,60 @@ void Variant::Inline()
     }
 }
 
+void Variant::InvertInline()
+{
+    byte data[sizeof(Matrix)];
+    switch (Type.Type)
+    {
+    case VariantType::Bool:
+    case VariantType::Int:
+    case VariantType::Uint:
+    case VariantType::Int64:
+    case VariantType::Uint64:
+    case VariantType::Float:
+    case VariantType::Double:
+    case VariantType::Pointer:
+    case VariantType::String:
+    case VariantType::Float2:
+    case VariantType::Float3:
+    case VariantType::Float4:
+    case VariantType::Color:
+#if !USE_LARGE_WORLDS
+    case VariantType::BoundingSphere:
+    case VariantType::BoundingBox:
+    case VariantType::Ray:
+#endif
+    case VariantType::Guid:
+    case VariantType::Quaternion:
+    case VariantType::Rectangle:
+    case VariantType::Int2:
+    case VariantType::Int3:
+    case VariantType::Int4:
+    case VariantType::Int16:
+    case VariantType::Uint16:
+    case VariantType::Double2:
+    case VariantType::Double3:
+    case VariantType::Double4:
+        static_assert(sizeof(data) >= sizeof(AsData), "Invalid memory size.");
+        Platform::MemoryCopy(data, AsData, sizeof(AsData));
+        break;
+#if USE_LARGE_WORLDS
+    case VariantType::BoundingSphere:
+    case VariantType::BoundingBox:
+    case VariantType::Ray:
+#endif
+    case VariantType::Transform:
+    case VariantType::Matrix:
+        ASSERT(sizeof(data) >= AsBlob.Length);
+        Platform::MemoryCopy(data, AsBlob.Data, AsBlob.Length);
+        break;
+    default:
+        return; // Not used
+    }
+    SetType(VariantType(VariantType::Structure, InBuiltTypesTypeNames[Type.Type]));
+    CopyStructure(data);
+}
+
 Variant Variant::NewValue(const StringAnsiView& typeName)
 {
     Variant v;
@@ -2988,6 +3066,89 @@ void Variant::DeleteValue()
 
     // Go back to null
     SetType(VariantType(VariantType::Null));
+}
+
+Variant Variant::Parse(const StringView& text, const VariantType& type)
+{
+    Variant result;
+    result.SetType(type);
+    if (text.IsEmpty())
+        return result;
+    if (type != VariantType())
+    {
+        switch (type.Type)
+        {
+        case VariantType::Bool:
+            if (text == TEXT("1") || text.Compare(StringView(TEXT("true"), 4), StringSearchCase::IgnoreCase) == 0)
+                result.AsBool = true;
+            break;
+        case VariantType::Int16:
+            StringUtils::Parse(text.Get(), text.Length(), &result.AsInt16);
+            break;
+        case VariantType::Uint16:
+            StringUtils::Parse(text.Get(), text.Length(), &result.AsUint16);
+            break;
+        case VariantType::Int:
+            StringUtils::Parse(text.Get(), text.Length(), &result.AsInt);
+            break;
+        case VariantType::Uint:
+            StringUtils::Parse(text.Get(), text.Length(), &result.AsUint);
+            break;
+        case VariantType::Int64:
+            StringUtils::Parse(text.Get(), text.Length(), &result.AsInt64);
+            break;
+        case VariantType::Uint64:
+        case VariantType::Enum:
+            if (!StringUtils::Parse(text.Get(), text.Length(), &result.AsUint64))
+            {
+            }
+            else if (type.TypeName)
+            {
+                const ScriptingTypeHandle typeHandle = Scripting::FindScriptingType(StringAnsiView(type.TypeName));
+                if (typeHandle && typeHandle.GetType().Type == ScriptingTypes::Enum)
+                {
+                    const auto items = typeHandle.GetType().Enum.Items;
+                    StringAsANSI<32> textAnsi(text.Get(), text.Length());
+                    StringAnsiView textAnsiView(textAnsi.Get());
+                    for (int32 i = 0; items[i].Name; i++)
+                    {
+                        if (textAnsiView == items[i].Name)
+                        {
+                            result.AsUint64 = items[i].Value;
+                            break;
+                        }
+                    }
+                }
+            }
+            break;
+        case VariantType::Float:
+            StringUtils::Parse(text.Get(), &result.AsFloat);
+            break;
+        case VariantType::Double:
+            StringUtils::Parse(text.Get(), &result.AsFloat);
+            result.AsDouble = (float)result.AsFloat;
+            break;
+        case VariantType::String:
+            result.SetString(text);
+        default:
+            break;
+        }
+    }
+    else
+    {
+        // Parse as number
+        int32 valueInt;
+        if (!StringUtils::Parse(text.Get(), text.Length(), &valueInt))
+        {
+            result = valueInt;
+        }
+        else
+        {
+            // Fallback to string
+            result.SetString(text);
+        }
+    }
+    return result;
 }
 
 bool Variant::CanCast(const Variant& v, const VariantType& to)
@@ -3274,6 +3435,16 @@ bool Variant::CanCast(const Variant& v, const VariantType& to)
         case VariantType::Double2:
         case VariantType::Double3:
         case VariantType::Double4:
+            return true;
+        default:
+            return false;
+        }
+    case VariantType::Null:
+        switch (to.Type)
+        {
+    case VariantType::Asset:
+    case VariantType::ManagedObject:
+    case VariantType::Object:
             return true;
         default:
             return false;
@@ -3751,6 +3922,23 @@ Variant Variant::Cast(const Variant& v, const VariantType& to)
         default: ;
         }
         break;
+    case VariantType::Null:
+        switch (to.Type)
+        {
+        case VariantType::Asset:
+            return Variant((Asset*)nullptr);
+        case VariantType::Object:
+            return Variant((ScriptingObject*)nullptr);
+        case VariantType::ManagedObject:
+        {
+            Variant result;
+            result.SetType(VariantType(VariantType::ManagedObject));
+            result.MANAGED_GC_HANDLE = 0;
+            return result;
+        }
+        default:
+            return false;
+        }
     default: ;
     }
     LOG(Error, "Cannot cast Variant from {0} to {1}", v.Type, to);
@@ -3928,15 +4116,32 @@ void Variant::CopyStructure(void* src)
 {
     if (AsBlob.Data && src)
     {
-        const ScriptingTypeHandle typeHandle = Scripting::FindScriptingType(StringAnsiView(Type.TypeName));
+        const StringAnsiView typeName(Type.TypeName);
+        const ScriptingTypeHandle typeHandle = Scripting::FindScriptingType(typeName);
         if (typeHandle)
         {
             auto& type = typeHandle.GetType();
             type.Struct.Copy(AsBlob.Data, src);
         }
+#if USE_CSHARP
+        else if (const auto mclass = Scripting::FindClass(typeName))
+        {
+            // Fallback to C#-only types
+            MCore::Thread::Attach();
+            if (MANAGED_GC_HANDLE && mclass->IsValueType())
+            {
+                MObject* instance = MCore::GCHandle::GetTarget(MANAGED_GC_HANDLE);
+                void* data = MCore::Object::Unbox(instance);
+                Platform::MemoryCopy(data, src, mclass->GetInstanceSize());
+            }
+        }
+#endif
         else
         {
-            Platform::MemoryCopy(AsBlob.Data, src, AsBlob.Length);
+            if (typeName.Length() != 0)
+            {
+                LOG(Warning, "Missing scripting type \'{0}\'", String(typeName));
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #if PLATFORM_UNIX && !PLATFORM_PS4 && !PLATFORM_PS5
 
@@ -96,7 +96,11 @@ static bool CreateEndPointFromAddr(sockaddr* addr, NetworkEndPoint& endPoint)
         return true;
     }
     char strPort[6];
+#if __APPLE__
+    snprintf(strPort, sizeof(strPort), "%d", port);
+#else
     sprintf(strPort, "%d", port);
+#endif
     endPoint.IPVersion = addr->sa_family == AF_INET6 ? NetworkIPVersion::IPv6 : NetworkIPVersion::IPv4;
     memcpy(endPoint.Data, addr, size);
     return false;

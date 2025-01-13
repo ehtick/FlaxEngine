@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -166,6 +166,13 @@ public:
     /// Gets the total length of the spline curve (distance between all the points).
     /// </summary>
     API_PROPERTY() float GetSplineLength() const;
+
+    /// <summary>
+    /// Gets the length of the spline segment (distance between pair of two points).
+    /// </summary>
+    /// <param name="index">The index of the segment end index. Zero-based, smaller than GetSplinePointsCount().</param>
+    /// <returns>The spline segment length.</returns>
+    API_FUNCTION() float GetSplineSegmentLength(int32 index) const;
 
     /// <summary>
     /// Gets the time of the spline keyframe.

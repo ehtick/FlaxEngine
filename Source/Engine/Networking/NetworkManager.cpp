@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "NetworkManager.h"
 #include "NetworkClient.h"
@@ -364,6 +364,8 @@ void NetworkManager::Stop()
 
     State = NetworkConnectionState::Disconnected;
     Mode = NetworkManagerMode::Offline;
+    LastUpdateTime = 0;
+
     StateChanged();
 }
 
@@ -382,7 +384,8 @@ void NetworkManagerService::Update()
 
     // Process network messages
     NetworkEvent event;
-    while (peer->PopEvent(event))
+    bool eventIsValid = true;
+    while (peer->PopEvent(event) && eventIsValid)
     {
         switch (event.EventType)
         {
@@ -471,6 +474,9 @@ void NetworkManagerService::Update()
                 }
             }
             peer->RecycleMessage(event.Message);
+            break;
+        default:
+            eventIsValid = false;
             break;
         }
     }

@@ -1,6 +1,7 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
+using System.ComponentModel;
 
 namespace FlaxEngine.GUI
 {
@@ -233,6 +234,11 @@ namespace FlaxEngine.GUI
                 if (_bounds.Size.Equals(ref value))
                     return;
                 var bounds = new Rectangle(_bounds.Location, value);
+                if (_pivotRelativeSizing)
+                {
+                    var delta = _bounds.Size - value;
+                    bounds.Location += delta * Pivot;
+                }
                 SetBounds(ref bounds);
             }
         }
@@ -382,6 +388,7 @@ namespace FlaxEngine.GUI
         /// <summary>
         /// Gets or sets the shear transform angles (x, y). Defined in degrees. Shearing happens relative to the control pivot point.
         /// </summary>
+        [DefaultValue(typeof(Float2), "0,0")]
         [ExpandGroups, EditorDisplay("Transform"), EditorOrder(1040), Tooltip("The shear transform angles (x, y). Defined in degrees. Shearing happens relative to the control pivot point.")]
         public Float2 Shear
         {
@@ -398,6 +405,7 @@ namespace FlaxEngine.GUI
         /// <summary>
         /// Gets or sets the rotation angle (in degrees). Control is rotated around it's pivot point (middle of the control by default).
         /// </summary>
+        [DefaultValue(0.0f)]
         [ExpandGroups, EditorDisplay("Transform"), EditorOrder(1050), Tooltip("The control rotation angle (in degrees). Control is rotated around it's pivot point (middle of the control by default).")]
         public float Rotation
         {
@@ -487,9 +495,12 @@ namespace FlaxEngine.GUI
         public void UpdateTransform()
         {
             // Actual pivot and negative pivot
-            Float2.Multiply(ref _pivot, ref _bounds.Size, out var v1);
-            Float2.Negate(ref v1, out var v2);
-            Float2.Add(ref v1, ref _bounds.Location, out v1);
+            //Float2.Multiply(ref _pivot, ref _bounds.Size, out var v1);
+            //Float2.Negate(ref v1, out var v2);
+            //Float2.Add(ref v1, ref _bounds.Location, out v1);
+            var v1 = _pivot * _bounds.Size;
+            var v2 = -v1;
+            v1 += _bounds.Location;
 
             // ------ Matrix3x3 based version:
 
@@ -518,25 +529,49 @@ namespace FlaxEngine.GUI
             // ------ Matrix2x2 based version:
 
             // 2D transformation
-            Matrix2x2.Scale(ref _scale, out Matrix2x2 m1);
-            Matrix2x2.Shear(ref _shear, out Matrix2x2 m2);
-            Matrix2x2.Multiply(ref m1, ref m2, out m1);
-            Matrix2x2.Rotation(Mathf.DegreesToRadians * _rotation, out m2);
-            Matrix2x2.Multiply(ref m1, ref m2, out m1);
 
+            //Matrix2x2.Scale(ref _scale, out Matrix2x2 m1);
+            //Matrix2x2.Shear(ref _shear, out Matrix2x2 m2);
+            //Matrix2x2.Multiply(ref m1, ref m2, out m1);
+
+            // Scale and Shear
+            Matrix3x3 m1 = new Matrix3x3
+                (
+                _scale.X,
+                _scale.X * (_shear.Y == 0 ? 0 : (1.0f / Mathf.Tan(Mathf.DegreesToRadians * (90 - Mathf.Clamp(_shear.Y, -89.0f, 89.0f))))),
+                0,
+                _scale.Y * (_shear.X == 0 ? 0 : (1.0f / Mathf.Tan(Mathf.DegreesToRadians * (90 - Mathf.Clamp(_shear.X, -89.0f, 89.0f))))),
+                _scale.Y,
+                0, 0, 0, 1
+                );
+
+            
+            //Matrix2x2.Rotation(Mathf.DegreesToRadians * _rotation, out m2);
+            float sin = Mathf.Sin(Mathf.DegreesToRadians * _rotation);
+            float cos = Mathf.Cos(Mathf.DegreesToRadians * _rotation);
+
+            //Matrix2x2.Multiply(ref m1, ref m2, out m1);
+            m1.M11 = (_scale.X * cos) + (m1.M12 * -sin);
+            m1.M12 = (_scale.X * sin) + (m1.M12 * cos);
+            float m21 = (m1.M21 * cos) + (_scale.Y * -sin);
+            m1.M22 = (m1.M21 * sin) + (_scale.Y * cos);
+            m1.M21 = m21;
             // Mix all the stuff
-            Matrix3x3.Translation2D(ref v2, out Matrix3x3 m3);
-            Matrix3x3 m4 = (Matrix3x3)m1;
-            Matrix3x3.Multiply(ref m3, ref m4, out m3);
-            Matrix3x3.Translation2D(ref v1, out m4);
-            Matrix3x3.Multiply(ref m3, ref m4, out _cachedTransform);
+            //Matrix3x3.Translation2D(ref v2, out Matrix3x3 m3);
+            //Matrix3x3 m4 = (Matrix3x3)m1;
+            //Matrix3x3.Multiply(ref m3, ref m4, out m3);
+            //Matrix3x3.Translation2D(ref v1, out m4);
+            //Matrix3x3.Multiply(ref m3, ref m4, out _cachedTransform);
+            m1.M31 = (v2.X * m1.M11) + (v2.Y * m1.M21) + v1.X;
+            m1.M32 = (v2.X * m1.M12) + (v2.Y * m1.M22) + v1.Y;
+            _cachedTransform = m1;
 
             // Cache inverted transform
             Matrix3x3.Invert(ref _cachedTransform, out _cachedTransformInv);
         }
 
         /// <summary>
-        /// Sets the anchor preset for the control. Can be use to auto-place the control for a given preset or can preserve the current control bounds.
+        /// Sets the anchor preset for the control. Can be used to auto-place the control for a given preset or can preserve the current control bounds.
         /// </summary>
         /// <param name="anchorPreset">The anchor preset to set.</param>
         /// <param name="preserveBounds">True if preserve current control bounds, otherwise will align control position accordingly to the anchor location.</param>

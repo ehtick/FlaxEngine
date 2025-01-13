@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -36,6 +36,22 @@ namespace FlaxEditor.Modules
         {
             public string AssemblyName;
             public string TypeName;
+            
+            public DockState DockState;
+            public DockPanel DockedTo;
+            public float? SplitterValue = null;
+
+            public bool SelectOnShow = false;
+
+            public bool Maximize;
+            public bool Minimize;
+            public Float2 FloatSize;
+            public Float2 FloatPosition;
+
+            // Constructor, to allow for default values
+            public WindowRestoreData()
+            {
+            }
         }
 
         private readonly List<WindowRestoreData> _restoreWindows = new List<WindowRestoreData>();
@@ -171,9 +187,13 @@ namespace FlaxEditor.Modules
             var mainWindow = MainWindow;
             if (mainWindow)
             {
-                var projectPath = Globals.ProjectFolder.Replace('/', '\\');
-                var platformBit = Platform.Is64BitApp ? "64" : "32";
-                var title = string.Format("Flax Editor - \'{0}\' ({1}-bit)", projectPath, platformBit);
+                var projectPath = Globals.ProjectFolder;
+#if PLATFORM_WINDOWS
+                projectPath = projectPath.Replace('/', '\\');
+#endif
+                var engineVersion = Editor.EngineProject.Version;
+                var engineVersionText = engineVersion.Revision > 0 ? $"{engineVersion.Major}.{engineVersion.Minor}.{engineVersion.Revision}" : $"{engineVersion.Major}.{engineVersion.Minor}";
+                var title = $"Flax Editor {engineVersionText} - \'{projectPath}\'";
                 mainWindow.Title = title;
             }
         }
@@ -491,11 +511,11 @@ namespace FlaxEditor.Modules
         {
             var bounds = node["Bounds"];
             var isMaximizedText = bounds.GetAttribute("IsMaximized");
-            if (!string.IsNullOrEmpty(isMaximizedText))
-                isMaximized = bool.Parse(isMaximizedText);
+            if (!string.IsNullOrEmpty(isMaximizedText) && bool.TryParse(isMaximizedText, out var tmpBool))
+                isMaximized = tmpBool;
             var isMinimizedText = bounds.GetAttribute("IsMinimized");
-            if (!string.IsNullOrEmpty(isMinimizedText))
-                isMinimized = bool.Parse(isMinimizedText);
+            if (!string.IsNullOrEmpty(isMinimizedText) && bool.TryParse(isMinimizedText, out tmpBool))
+                isMinimized = tmpBool;
             float x = float.Parse(bounds.GetAttribute("X"), CultureInfo.InvariantCulture);
             float y = float.Parse(bounds.GetAttribute("Y"), CultureInfo.InvariantCulture);
             float width = float.Parse(bounds.GetAttribute("Width"), CultureInfo.InvariantCulture);
@@ -672,7 +692,9 @@ namespace FlaxEditor.Modules
             if (newLocation == DockState.Float)
             {
                 // Check if there is a floating window that has the same size
-                var defaultSize = window.DefaultSize;
+                var dpi = (float)Platform.Dpi / 96.0f;
+                var dpiScale = Platform.CustomDpiScale;
+                var defaultSize = window.DefaultSize * dpi;
                 for (var i = 0; i < Editor.UI.MasterPanel.FloatingPanels.Count; i++)
                 {
                     var win = Editor.UI.MasterPanel.FloatingPanels[i];
@@ -684,7 +706,7 @@ namespace FlaxEditor.Modules
                     }
                 }
 
-                window.ShowFloating(defaultSize);
+                window.ShowFloating(defaultSize * dpiScale);
             }
             else
             {
@@ -703,9 +725,7 @@ namespace FlaxEditor.Modules
             for (int i = 0; i < Windows.Count; i++)
             {
                 if (string.Equals(Windows[i].SerializationTypename, typename, StringComparison.OrdinalIgnoreCase))
-                {
                     return Windows[i];
-                }
             }
 
             // Check if it's an asset ID
@@ -735,7 +755,6 @@ namespace FlaxEditor.Modules
             settings.Size = Platform.DesktopSize * 0.75f;
             settings.StartPosition = WindowStartPosition.CenterScreen;
             settings.ShowAfterFirstPaint = true;
-
 #if PLATFORM_WINDOWS
             if (!Editor.Instance.Options.Options.Interface.UseNativeWindowSystem)
             {
@@ -747,12 +766,9 @@ namespace FlaxEditor.Modules
 #elif PLATFORM_LINUX
             settings.HasBorder = false;
 #endif
-
             MainWindow = Platform.CreateWindow(ref settings);
-
             if (MainWindow == null)
             {
-                // Error
                 Editor.LogError("Failed to create editor main window!");
                 return;
             }
@@ -800,10 +816,38 @@ namespace FlaxEditor.Modules
             if (constructor == null || type.IsGenericType)
                 return;
 
-            WindowRestoreData winData;
+            var winData = new WindowRestoreData();
+            var panel = win.Window.ParentDockPanel;
+
+            // Ensure that this window is only selected following recompilation
+            // if it was the active tab in its dock panel. Otherwise, there is a
+            // risk of interrupting the user's workflow by potentially selecting
+            // background tabs.
+            winData.SelectOnShow = panel.SelectedTab == win.Window;
+            if (panel is FloatWindowDockPanel)
+            {
+                winData.DockState = DockState.Float;
+                var window = win.Window.RootWindow.Window;
+                winData.FloatPosition = window.Position;
+                winData.FloatSize = window.ClientSize;
+                winData.Maximize = window.IsMaximized;
+                winData.Minimize = window.IsMinimized;
+            }
+            else
+            {
+                if (panel.TabsCount > 1)
+                {
+                    winData.DockState = DockState.DockFill;
+                    winData.DockedTo = panel;
+                }else
+                {
+                    winData.DockState = panel.TryGetDockState(out var splitterValue);
+                    winData.DockedTo = panel.ParentDockPanel;
+                    winData.SplitterValue = splitterValue;
+                }
+            }
             winData.AssemblyName = type.Assembly.GetName().Name;
             winData.TypeName = type.FullName;
-            // TODO: cache and restore docking info
             _restoreWindows.Add(winData);
         }
 
@@ -822,7 +866,24 @@ namespace FlaxEditor.Modules
                         if (type != null)
                         {
                             var win = (CustomEditorWindow)Activator.CreateInstance(type);
-                            win.Show();
+                            win.Show(winData.DockState, winData.DockedTo, winData.SelectOnShow, winData.SplitterValue);
+                            if (winData.DockState == DockState.Float)
+                            {
+                                var window = win.Window.RootWindow.Window;
+                                window.Position = winData.FloatPosition;
+                                if (winData.Maximize)
+                                {
+                                    window.Maximize();
+                                }
+                                else if (winData.Minimize)
+                                {
+                                    window.Minimize();
+                                }
+                                else 
+                                {
+                                    window.ClientSize = winData.FloatSize;
+                                }
+                            }
                         }
                     }
                 }
@@ -889,7 +950,10 @@ namespace FlaxEditor.Modules
             MainWindow = null;
 
             // Capture project icon screenshot (not in play mode and if editor was used for some time)
-            if (!Editor.StateMachine.IsPlayMode && Time.TimeSinceStartup >= 5.0f)
+            if (!Editor.StateMachine.IsPlayMode && 
+                Time.TimeSinceStartup >= 5.0f && 
+                !Editor.IsHeadlessMode && 
+                GPUDevice.Instance?.RendererType != RendererType.Null)
             {
                 Editor.Log("Capture project icon screenshot");
                 _projectIconScreenshotTimeout = Time.TimeSinceStartup + 0.8f; // wait 800ms for a screenshot task

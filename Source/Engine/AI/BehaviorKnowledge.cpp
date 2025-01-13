@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "BehaviorKnowledge.h"
 #include "BehaviorTree.h"
@@ -83,7 +83,7 @@ bool AccessVariant(Variant& instance, const StringAnsiView& member, Variant& val
         }
     }
 #endif
-    else
+    else if (typeName.HasChars())
     {
         LOG(Warning, "Missing scripting type \'{0}\'", String(typeName));
     }
@@ -144,13 +144,22 @@ BehaviorKnowledge::~BehaviorKnowledge()
 
 void BehaviorKnowledge::InitMemory(BehaviorTree* tree)
 {
-    ASSERT_LOW_LAYER(!Tree && tree);
+    if (Tree)
+        FreeMemory();
+    if (!tree)
+        return;
     Tree = tree;
     Blackboard = Variant::NewValue(tree->Graph.Root->BlackboardType);
     RelevantNodes.Resize(tree->Graph.NodesCount, false);
     RelevantNodes.SetAll(false);
     if (!Memory && tree->Graph.NodesStatesSize)
+    {
         Memory = Allocator::Allocate(tree->Graph.NodesStatesSize);
+#if !BUILD_RELEASE
+        // Clear memory to make it easier to spot missing data issues (eg. zero GCHandle in C# BT node due to missing state init)
+        Platform::MemoryClear(Memory, tree->Graph.NodesStatesSize);
+#endif
+    }
 }
 
 void BehaviorKnowledge::FreeMemory()
@@ -203,7 +212,7 @@ bool BehaviorKnowledge::HasGoal(ScriptingTypeHandle type) const
     return false;
 }
 
-Variant BehaviorKnowledge::GetGoal(ScriptingTypeHandle type)
+const Variant& BehaviorKnowledge::GetGoal(ScriptingTypeHandle type) const
 {
     for (const Variant& goal : Goals)
     {

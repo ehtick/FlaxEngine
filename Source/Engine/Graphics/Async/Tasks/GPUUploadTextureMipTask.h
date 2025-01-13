@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -35,7 +35,7 @@ public:
         , _rowPitch(rowPitch)
         , _slicePitch(slicePitch)
     {
-        _texture.OnUnload.Bind<GPUUploadTextureMipTask, &GPUUploadTextureMipTask::OnResourceUnload>(this);
+        _texture.Released.Bind<GPUUploadTextureMipTask, &GPUUploadTextureMipTask::OnResourceReleased>(this);
 
         if (copyData)
             _data.Copy(data);
@@ -44,7 +44,7 @@ public:
     }
 
 private:
-    void OnResourceUnload(GPUTextureReference* ref)
+    void OnResourceReleased()
     {
         Cancel();
     }
@@ -83,11 +83,15 @@ protected:
         auto texture = _texture.Get();
         if (texture)
         {
-            // Check if the new mips has been just uploaded
             if (_mipIndex == texture->HighestResidentMipIndex() - 1)
             {
-                // Mark as mip loaded
+                // Mark the new mip as loaded
                 texture->SetResidentMipLevels(texture->ResidentMipLevels() + 1);
+            }
+            else
+            {
+                // Mark the new mip and all lower ones as loaded (eg. when loading Model SDF texture mips at once but out of order)
+                texture->SetResidentMipLevels(Math::Max(texture->ResidentMipLevels(), texture->MipLevels() - _mipIndex));
             }
         }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -59,9 +59,9 @@ DECLARE_SCRIPTING_TYPE_MINIMAL(CreateWindowSettings);
     API_FIELD() Float2 MinimumSize = Float2(1, 1);
 
     /// <summary>
-    /// The maximum size.
+    /// The maximum size. Set to 0 to use unlimited size.
     /// </summary>
-    API_FIELD() Float2 MaximumSize = Float2(8192, 4096);
+    API_FIELD() Float2 MaximumSize = Float2(0, 0);
 
     /// <summary>
     /// The start position mode.

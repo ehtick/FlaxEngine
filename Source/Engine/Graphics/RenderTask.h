@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #pragma once
 
@@ -21,6 +21,7 @@ class PostProcessEffect;
 struct RenderContext;
 class Camera;
 class Actor;
+class Scene;
 
 /// <summary>
 /// Allows to perform custom rendering using graphics pipeline.
@@ -111,9 +112,14 @@ public:
     API_PROPERTY() virtual bool CanDraw() const;
 
     /// <summary>
-    /// Called by graphics device to draw this task. Can be used to invoke task rendering nested inside another task - use on own risk!
+    /// Called by graphics device to draw this task.
     /// </summary>
     API_FUNCTION() virtual void OnDraw();
+
+    /// <summary>
+    /// Called by graphics device to idle task that has not been selected for drawing this frame (CanDraw returned false). Can be used to recycle cached memory if task is idle for many frames in a row.
+    /// </summary>
+    virtual void OnIdle();
 
     /// <summary>
     /// Called on task rendering begin.
@@ -173,6 +179,11 @@ API_ENUM(Attributes="Flags") enum class ActorsSources
     /// The actors from the custom collection.
     /// </summary>
     CustomActors = 2,
+
+    /// <summary>
+    /// The scenes from the custom collection.
+    /// </summary>
+    CustomScenes = 4,
 
     /// <summary>
     /// The actors from the loaded scenes and custom collection.
@@ -267,9 +278,14 @@ public:
 
 public:
     /// <summary>
-    /// The custom set of actors to render.
+    /// The custom set of actors to render. Used when ActorsSources::CustomActors flag is active.
     /// </summary>
-    Array<Actor*> CustomActors;
+    API_FIELD() Array<Actor*> CustomActors;
+
+    /// <summary>
+    /// The custom set of scenes to render. Used when ActorsSources::CustomScenes flag is active.
+    /// </summary>
+    API_FIELD() Array<Scene*> CustomScenes;
 
     /// <summary>
     /// Adds the custom actor to the rendering.
@@ -396,6 +412,7 @@ public:
     // [RenderTask]
     bool Resize(int32 width, int32 height) override;
     bool CanDraw() const override;
+    void OnIdle() override;
     void OnBegin(GPUContext* context) override;
     void OnRender(GPUContext* context) override;
     void OnEnd(GPUContext* context) override;

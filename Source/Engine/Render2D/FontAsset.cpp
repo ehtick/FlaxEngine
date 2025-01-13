@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Wojciech Figat. All rights reserved.
+// Copyright (c) 2012-2024 Wojciech Figat. All rights reserved.
 
 #include "FontAsset.h"
 #include "Font.h"
@@ -85,6 +85,16 @@ bool FontAsset::Init()
         LOG_FT_ERROR(error);
     }
     return error;
+}
+
+FontFlags FontAsset::GetStyle() const
+{
+    FontFlags flags = FontFlags::None;
+    if ((_face->style_flags & FT_STYLE_FLAG_ITALIC) != 0)
+        flags |= FontFlags::Italic;
+    if ((_face->style_flags & FT_STYLE_FLAG_BOLD) != 0)
+        flags |= FontFlags::Bold;
+    return flags;
 }
 
 void FontAsset::SetOptions(const FontOptions& value)
@@ -189,14 +199,29 @@ bool FontAsset::Save(const StringView& path)
 
 #endif
 
+bool FontAsset::ContainsChar(Char c) const
+{
+    return FT_Get_Char_Index(_face, c) > 0;
+}
+
 void FontAsset::Invalidate()
 {
     ScopeLock lock(Locker);
-
     for (auto font : _fonts)
-    {
         font->Invalidate();
-    }
+}
+
+uint64 FontAsset::GetMemoryUsage() const
+{
+    Locker.Lock();
+    uint64 result = BinaryAsset::GetMemoryUsage();
+    result += sizeof(FontAsset) - sizeof(BinaryAsset);
+    result += sizeof(FT_FaceRec);
+    result += _fontFile.Length();
+    for (auto font : _fonts)
+        result += sizeof(Font);
+    Locker.Unlock();
+    return result;
 }
 
 bool FontAsset::init(AssetInitData& initData)
